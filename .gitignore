@@ -1,0 +1,57 @@
+# Dependencies and package-manager state
+node_modules/
+.npm/
+.npm-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build, test and release output
+coverage/
+dist/
+out/
+release/
+artifacts/
+.test-work/
+.windows-runtime/
+.tmp/
+tmp/
+*.log
+
+# Large release-only compatibility assets
+assets/linux-compat/*.tar.xz
+assets/linux-compat/*.node
+assets/windows-runtime/*.zip
+assets/linux-compat/*.tgz
+
+# Never commit copied Mirasim application files
+Mirasim.exe
+app.asar
+*.asar
+*.asar.unpacked/
+resources/app.asar
+resources/server/
+resources/web/
+resources/pi-gui/
+
+# Credentials and local SSH material
+.env
+.env.*
+!.env.example
+.ssh/
+id_rsa*
+id_ed25519*
+*.pem
+*.ppk
+*.key
+known_hosts
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo

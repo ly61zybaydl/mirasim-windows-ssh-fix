@@ -1,0 +1,156 @@
+name: Release package
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  legacy-assets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Download pinned source archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd assets/linux-compat
+          curl --fail --location --retry 3 \
+            --output node-v22.23.1-linux-x64-glibc-217.tar.xz \
+            https://unofficial-builds.nodejs.org/download/release/v22.23.1/node-v22.23.1-linux-x64-glibc-217.tar.xz
+          curl --fail --location --retry 3 \
+            --output node-pty-1.2.0-beta.14.tgz \
+            https://registry.npmjs.org/node-pty/-/node-pty-1.2.0-beta.14.tgz
+          curl --fail --location --retry 3 \
+            --output node-addon-api-7.1.0.tgz \
+            https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.0.tgz
+          echo '2e729bf3198098a221681d3f1926a2d505c020a683d3b8e4826e3794818da340  node-v22.23.1-linux-x64-glibc-217.tar.xz' | sha256sum -c -
+          echo '1c00a3190b95ac1639f39215d792366fd9cf91265e41a55fab152b65346baef0  node-pty-1.2.0-beta.14.tgz' | sha256sum -c -
+          echo '8e621f150678b183225c394c0faca7338396eb4fa620b447b88995f8990af522  node-addon-api-7.1.0.tgz' | sha256sum -c -
+      - name: Build the pinned node-pty binary on glibc 2.27
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/assets/linux-compat:/inputs" \
+            ubuntu:18.04@sha256:152dc042452c496007f07ca9127571cb9c29697f42acbfad72324b2bb2e43c98 bash -euo pipefail -c '
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential ca-certificates curl xz-utils
+              curl --fail --location --retry 3 \
+                --output /tmp/miniconda.sh \
+                https://repo.anaconda.com/miniconda/Miniconda3-py311_24.11.1-0-Linux-x86_64.sh
+              echo "807774bae6cd87132094458217ebf713df436f64779faf9bb4c3d4b6615c1e3a  /tmp/miniconda.sh" | sha256sum -c -
+              bash /tmp/miniconda.sh -b -p "$HOME/anaconda3"
+              build="$HOME/.mirasim-remote/compat-build-v22.23.1-pty-beta14"
+              mkdir -p "$build"
+              cp /inputs/node-v22.23.1-linux-x64-glibc-217.tar.xz "$build/"
+              cp /inputs/node-pty-1.2.0-beta.14.tgz "$build/"
+              cp /inputs/node-addon-api-7.1.0.tgz "$build/"
+              sh /inputs/build-node-pty.sh
+              cp "$build/pty.node" /inputs/pty-node-v127-glibc217.node
+            '
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.1
+      - run: node scripts/verify-release-assets.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: legacy-linux-assets
+          if-no-files-found: error
+          path: |
+            assets/linux-compat/node-v22.23.1-linux-x64-glibc-217.tar.xz
+            assets/linux-compat/pty-node-v127-glibc217.node
+
+  package:
+    needs: legacy-assets
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.1
+          cache: npm
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: legacy-linux-assets
+          path: .release-assets
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build and verify the native Windows askpass shim
+        shell: powershell
+        run: ./scripts/build-windows-askpass.ps1 -OutputDirectory "$PWD/.windows-askpass"
+      - run: npm run check
+      - run: npm test
+      - name: Download pinned independent Windows runtime
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path .windows-runtime | Out-Null
+          Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.23.1/node-v22.23.1-win-x64.zip' -OutFile '.windows-runtime/node-v22.23.1-win-x64.zip'
+          $actual = (Get-FileHash -LiteralPath '.windows-runtime/node-v22.23.1-win-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne '7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29') {
+            throw "Windows Node.js runtime hash mismatch: $actual"
+          }
+      - name: Build release ZIP
+        shell: powershell
+        run: ./scripts/package-release.ps1 -AssetDirectory "$PWD/.release-assets" -RuntimeAssetDirectory "$PWD/.windows-runtime" -AskpassAssetDirectory "$PWD/.windows-askpass"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mirasim-windows-ssh-fix
+          if-no-files-found: error
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+  publish:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mirasim-windows-ssh-fix
+          path: dist
+      - name: Verify tagged release files and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t release_zips < <(find dist -maxdepth 1 -type f -name '*.zip' -print)
+          if [[ ${#release_zips[@]} -ne 1 ]]; then
+            echo "Expected exactly one release ZIP, found ${#release_zips[@]}" >&2
+            exit 1
+          fi
+          expected_name="mirasim-windows-ssh-fix-${GITHUB_REF_NAME}-win-x64.zip"
+          if [[ $(basename "${release_zips[0]}") != "$expected_name" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match release file $(basename "${release_zips[0]}")" >&2
+            exit 1
+          fi
+          test -f dist/SHA256SUMS.txt
+          tr -d '\r' < dist/SHA256SUMS.txt > dist/SHA256SUMS.txt.lf
+          mv dist/SHA256SUMS.txt.lf dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+      - name: Attest tagged release provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Publish tagged GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS.txt --generate-notes --verify-tag
