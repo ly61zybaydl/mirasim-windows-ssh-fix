@@ -1,5 +1,7 @@
 # Mirasim Windows Remote SSH Fix
 
+**简体中文** | [English](README.en.md)
+
 一个面向 Windows 的 Mirasim Remote SSH 兼容补丁工具，支持应用、修复和恢复。
 
 > [!IMPORTANT]
@@ -29,7 +31,7 @@ Mirasim Desktop 的 Windows 构建中，Remote SSH 前端入口、Electron IPC b
 
 完整 Release ZIP 包含独立的 Windows Node.js、旧版 Linux 兼容运行时和 `windows-askpass.exe`。GitHub 自动生成的 **Source code (zip/tar.gz)** 不包含这些大体积运行时文件，普通用户应下载 Release 页面中的 Windows ZIP。
 
-1. 下载适合 Windows x64 的完整 Release ZIP，并解压到普通目录。
+1. 从 [Releases](https://github.com/ly61zybaydl/mirasim-windows-ssh-fix/releases) 下载适合 Windows x64 的完整 Release ZIP，并解压到普通目录。
 2. 完全退出 Mirasim，包括可能仍在后台运行的进程。
 3. 双击 `Mirasim-SSH-Fix.cmd`。无参数时默认执行 `apply`。
 4. 再运行一次 `status`，确认补丁和兼容资源均处于健康状态。
@@ -44,6 +46,8 @@ Mirasim-SSH-Fix.cmd restore
 ```
 
 如果已经使用过 `v0.1.0` 或 `v0.1.1`，请下载 `v0.1.2` 或更高版本，完整退出 Mirasim 后运行一次 `Mirasim-SSH-Fix.cmd repair`，再重新启动 Mirasim。`v0.1.2` 会同时修改 Mirasim 实际加载的下载式 UI runtime、启动 Windows IPC bridge，并避免 `.ssh/config` 中无关的 `RemoteForward` 失败导致连接反复重试。无需清理缓存；单独点击“重启 Server”不会重载 Electron bridge。
+
+无关的 `RemoteForward` 仍可能在 OpenSSH 日志中产生警告；补丁会让 Mirasim 所需的本地隧道继续工作，但不会让那个远程转发本身成功。
 
 如果 Mirasim 安装在非默认位置：
 
@@ -124,7 +128,3 @@ Mirasim 的连接表单不会自动导入整份 `.ssh/config`。请在表单中�
 ## License
 
 本仓库自有代码采用 [MIT License](LICENSE)。Mirasim 及所有第三方组件仍分别受其各自许可约束；本项目的 MIT License 不授予任何 Mirasim 软件权利。
-
----
-
-**English summary:** This is an unofficial, reversible Windows Remote SSH patcher for Mirasim Desktop. It enables the Windows SSH host-manager UI and patches the corresponding main-process implementation. It backs up and modifies `resources/app.asar` plus the selected downloaded UI runtime without modifying `Mirasim.exe`. Use the complete release ZIP, not GitHub's generated source archive. Official desktop or UI-runtime updates can overwrite the patch; run `status` and then `repair` afterward. Tested versions are listed above; other versions are attempted when their internal structure is compatible. The patcher never reads, copies, or uploads private-key contents.

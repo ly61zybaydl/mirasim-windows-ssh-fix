@@ -70,13 +70,14 @@ try {
   foreach ($relativePath in $requiredFiles) {
     Copy-Item -LiteralPath (Join-Path $repositoryRoot $relativePath) -Destination (Join-Path $stageRoot $relativePath)
   }
-  foreach ($relativePath in @('README.md', 'LICENSE', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md', 'CHANGELOG.md')) {
+  foreach ($relativePath in @('README.md', 'README.en.md', 'CONTRIBUTING.md', 'LICENSE', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md', 'CHANGELOG.md')) {
     $source = Join-Path $repositoryRoot $relativePath
     if (Test-Path -LiteralPath $source) {
       Copy-Item -LiteralPath $source -Destination (Join-Path $stageRoot $relativePath)
     }
   }
   Copy-Item -Recurse -LiteralPath (Join-Path $repositoryRoot 'src') -Destination (Join-Path $stageRoot 'src')
+  Copy-Item -Recurse -LiteralPath (Join-Path $repositoryRoot 'docs') -Destination (Join-Path $stageRoot 'docs')
   Copy-Item -Recurse -LiteralPath (Join-Path $repositoryRoot 'native') -Destination (Join-Path $stageRoot 'native')
   Copy-Item -Recurse -LiteralPath (Join-Path $repositoryRoot 'scripts') -Destination (Join-Path $stageRoot 'scripts')
   Copy-Item -Recurse -LiteralPath (Join-Path $repositoryRoot 'test') -Destination (Join-Path $stageRoot 'test')
