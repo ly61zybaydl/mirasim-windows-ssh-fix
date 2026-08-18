@@ -19,7 +19,7 @@ test("--help is self-contained and successful", () => {
   const result = runCli(["--help"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage:/);
-  assert.match(result.stdout, /Unknown Mirasim versions are always refused/);
+  assert.match(result.stdout, /Other versions are attempted/);
 });
 
 test("an unknown argument is rejected without probing the machine", () => {

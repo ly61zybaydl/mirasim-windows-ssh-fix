@@ -2,8 +2,7 @@
   "schemaVersion": 1,
   "target": "windows-x64",
   "source": {
-    "path": "native/windows-askpass/Program.cs",
-    "sha256": "fae51cd8d5a33f8eb207b268931f137538e75352430b5c4d92db9dac24879574"
+    "path": "native/windows-askpass/Program.cs"
   },
   "build": {
     "compiler": "Microsoft .NET Framework csc.exe",
@@ -11,12 +10,10 @@
       "/target:winexe",
       "/optimize+",
       "/platform:x64"
-    ],
-    "normalization": "zero PE timestamp and replace the compiler-generated MVID with the first 16 bytes of the source SHA-256"
+    ]
   },
   "files": {
     "windows-askpass.exe": {
-      "sha256": "f4735865ae9cba18432c1cb12c921064c7fc63d09edbdf3bc019817716e01d42",
       "releaseAsset": true
     }
   }

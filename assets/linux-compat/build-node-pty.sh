@@ -39,4 +39,3 @@ install -m 755 "$PTY_SOURCE/build/Release/pty.node" "$BUILD/pty.node"
 "$NODE_ROOT/bin/node" -e \
   "const binding={exports:{}}; process.dlopen(binding, process.argv[1]); if(typeof binding.exports.fork!=='function') throw new Error('node-pty fork export missing');" \
   "$BUILD/pty.node"
-sha256sum "$BUILD/pty.node"

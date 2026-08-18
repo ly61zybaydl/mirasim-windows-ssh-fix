@@ -10,14 +10,13 @@ if (!Number.isInteger(nodeMajor) || nodeMajor < 20) {
 const { apply, repair, restore, status } = require("./install.cjs");
 
 function parseArguments(argv) {
-  const options = { command: "status", json: false, app: null, allowUnsignedOutput: false };
+  const options = { command: "status", json: false, app: null };
   const commands = new Set(["detect", "status", "apply", "repair", "restore"]);
   const args = [...argv];
   if (args[0] && commands.has(args[0])) options.command = args.shift();
   while (args.length > 0) {
     const argument = args.shift();
     if (argument === "--json") options.json = true;
-    else if (argument === "--allow-unsigned-output") options.allowUnsignedOutput = true;
     else if (argument === "--app") {
       if (args.length === 0) throw new Error("--app requires a Mirasim installation directory");
       options.app = args.shift();
@@ -35,17 +34,17 @@ function usage() {
 
 Usage:
   mirasim-ssh-fix status [--app <directory>] [--json]
-  mirasim-ssh-fix apply [--app <directory>] [--allow-unsigned-output]
+  mirasim-ssh-fix apply [--app <directory>]
   mirasim-ssh-fix repair [--app <directory>]
   mirasim-ssh-fix restore [--app <directory>]
 
 Commands:
-  status   Detect version, patch state, Electron fuses, and assets
-  apply    Back up, patch, verify, and atomically replace Mirasim files
+  status   Detect version, patch state, and helper files
+  apply    Back up and patch Mirasim app.asar
   repair   Reapply after an update or restore missing compatibility assets
-  restore  Restore only the matching version/hash-bound backup
+  restore  Restore the backup for the installed Mirasim version
 
-Unknown Mirasim versions are always refused. The tool never reads private-key contents.
+Tested versions are shown by status. Other versions are attempted and report an error only if their bundle structure is incompatible.
 `;
 }
 
@@ -53,14 +52,11 @@ function humanStatus(result) {
   const lines = [
     `Mirasim ${result.version}`,
     `Directory: ${result.installDirectory}`,
-    `Supported: ${result.supported ? "yes" : "no"}`,
+    `Tested version: ${result.testedVersion ? "yes" : "no (will still be attempted)"}`,
     `Windows SSH patch: ${result.patched ? "installed" : "not installed"}`,
-    `Compatibility assets: ${result.assets.present ? "verified" : "missing or invalid"}`,
-    `ASAR SHA-256: ${result.asarHash}`,
-    `Embedded ASAR validation: ${result.fuses.embeddedAsarIntegrityValidation ? "enabled" : "disabled"}`,
-    `EXE ASAR metadata: ${result.exeIntegrityMatchesAsar ? "verified" : "missing, stale, or unreadable"}`,
+    `Helper files: ${result.assets.present ? "installed" : "missing"}`,
   ];
-  if (result.assets.error) lines.push(`Asset note: ${result.assets.error}`);
+  if (result.assets.missing.length > 0) lines.push(`Missing: ${result.assets.missing.join(", ")}`);
   return lines.join("\n");
 }
 

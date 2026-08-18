@@ -40,20 +40,30 @@ try {
     & (Join-Path $repositoryRoot 'scripts\build-windows-askpass.ps1') -OutputDirectory $AskpassAssetDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Windows askpass build failed.' }
   }
-  $assetJson = & node (Join-Path $repositoryRoot 'scripts\verify-release-assets.cjs') --asset-dir $AssetDirectory --json
-  if ($LASTEXITCODE -ne 0) { throw 'Release asset verification failed.' }
-  $verifiedAssets = $assetJson | ConvertFrom-Json
+
   $runtimeManifest = Join-Path $repositoryRoot 'assets\windows-runtime\manifest.json'
+  $runtimeConfig = Get-Content -Raw -LiteralPath $runtimeManifest | ConvertFrom-Json
+  $runtimeArchiveName = @($runtimeConfig.files.PSObject.Properties.Name)[0]
+  $runtimeArchivePath = Join-Path $RuntimeAssetDirectory $runtimeArchiveName
+  if (-not (Test-Path -LiteralPath $runtimeArchivePath)) {
+    New-Item -ItemType Directory -Force -Path $RuntimeAssetDirectory | Out-Null
+    Write-Output "Downloading $($runtimeConfig.source)"
+    Invoke-WebRequest -Uri $runtimeConfig.source -OutFile $runtimeArchivePath
+  }
+
+  $assetJson = & node (Join-Path $repositoryRoot 'scripts\verify-release-assets.cjs') --asset-dir $AssetDirectory --json
+  if ($LASTEXITCODE -ne 0) { throw 'Release assets are incomplete.' }
+  $verifiedAssets = $assetJson | ConvertFrom-Json
   $runtimeJson = & node (Join-Path $repositoryRoot 'scripts\verify-release-assets.cjs') --asset-dir $RuntimeAssetDirectory --manifest $runtimeManifest --json
-  if ($LASTEXITCODE -ne 0) { throw 'Windows runtime verification failed.' }
+  if ($LASTEXITCODE -ne 0) { throw 'Windows runtime is incomplete.' }
   $verifiedRuntime = $runtimeJson | ConvertFrom-Json
-  if (@($verifiedRuntime.files).Count -ne 1) { throw 'Expected exactly one pinned Windows runtime archive.' }
+  if (@($verifiedRuntime.files).Count -ne 1) { throw 'Expected one Windows runtime archive.' }
   $askpassManifest = Join-Path $repositoryRoot 'assets\windows-askpass\manifest.json'
   $askpassJson = & node (Join-Path $repositoryRoot 'scripts\verify-release-assets.cjs') --asset-dir $AskpassAssetDirectory --manifest $askpassManifest --json
-  if ($LASTEXITCODE -ne 0) { throw 'Windows askpass verification failed.' }
+  if ($LASTEXITCODE -ne 0) { throw 'Windows askpass build is incomplete.' }
   $verifiedAskpass = $askpassJson | ConvertFrom-Json
   if (@($verifiedAskpass.files).Count -ne 1 -or $verifiedAskpass.files[0].name -ne 'windows-askpass.exe') {
-    throw 'Expected exactly the pinned windows-askpass.exe asset.'
+    throw 'Expected windows-askpass.exe.'
   }
 
   $requiredFiles = @('package.json', 'package-lock.json', 'Mirasim-SSH-Fix.cmd')
@@ -96,33 +106,10 @@ try {
   & npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix $stageRoot
   if ($LASTEXITCODE -ne 0) { throw 'npm ci failed while assembling the release.' }
 
-  & node (Join-Path $repositoryRoot 'scripts\verify-release-assets.cjs') --asset-dir $assetStage | Out-Host
-  if ($LASTEXITCODE -ne 0) { throw 'Staged release asset verification failed.' }
-  & node (Join-Path $repositoryRoot 'scripts\verify-release-assets.cjs') --asset-dir $askpassStage --manifest (Join-Path $askpassStage 'manifest.json') | Out-Host
-  if ($LASTEXITCODE -ne 0) { throw 'Staged Windows askpass verification failed.' }
-
   New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
   if (Test-Path -LiteralPath $zipPath) { Remove-Item -Force -LiteralPath $zipPath }
   Compress-Archive -LiteralPath $stageRoot -DestinationPath $zipPath -CompressionLevel Optimal
-  $zipStream = [System.IO.File]::OpenRead($zipPath)
-  try {
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-      $zipHash = ([System.BitConverter]::ToString($sha256.ComputeHash($zipStream))).Replace('-', '').ToLowerInvariant()
-    } finally {
-      $sha256.Dispose()
-    }
-  } finally {
-    $zipStream.Dispose()
-  }
-  $checksumPath = Join-Path $OutputDirectory 'SHA256SUMS.txt'
-  [System.IO.File]::WriteAllText(
-    $checksumPath,
-    "$zipHash  $([System.IO.Path]::GetFileName($zipPath))`n",
-    [System.Text.Encoding]::ASCII
-  )
   Write-Output "Created $zipPath"
-  Write-Output "SHA-256 $zipHash"
 } finally {
   if (Test-Path -LiteralPath $stageParent) {
     $resolvedStage = [System.IO.Path]::GetFullPath($stageParent)

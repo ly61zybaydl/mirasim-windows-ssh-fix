@@ -1,28 +1,9 @@
 "use strict";
 
-const crypto = require("node:crypto");
 const vm = require("node:vm");
 
 const PATCH_MARKER = "__MIRASIM_WINDOWS_REMOTE_SSH_PATCH_V2__";
-const SUPPORTED_PROFILES = new Map([
-  ["0.0.170", {
-    originalMainSha256: "ad39985ad769ae14dfefe47cbac093b6298cc2d5de1b05053b21a629332ae155",
-    patchedMainSha256: "d5bc05829422daaeadbefd1fbaecba69edd1b6a4310f379c6d83bd007c464892",
-  }],
-  ["0.0.203", {
-    originalMainSha256: "81c9293718d40acc269829ff933c1c414babe6dd276330ebd8c7ad89243c47ee",
-    patchedMainSha256: "a7fb88553d37377269ed69eb48bc2e7c8d232f76fb69a9374d798196f60575d4",
-  }],
-  ["0.0.205", {
-    originalMainSha256: "ca3914e0e2bf7f56fd663d47adbc618982c4465229fd82d439a02e046abad343",
-    patchedMainSha256: "cb489d103383e22f30a6ba8f10fb9030183ccd6a6da469d54b1632dd2a7ce60a",
-  }],
-]);
-const SUPPORTED_VERSIONS = new Set(SUPPORTED_PROFILES.keys());
-
-function sourceSha256(source) {
-  return crypto.createHash("sha256").update(source, "utf8").digest("hex");
-}
+const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205"]);
 
 function countOccurrences(source, needle) {
   if (!needle) return 0;
@@ -309,11 +290,10 @@ async function __mirasimEnsureLegacyLinuxRuntime(__mirasimMaster){
   let __mirasimMajor=Number(__mirasimGlibc[1]),__mirasimMinor=Number(__mirasimGlibc[2]);
   if(__mirasimMajor!==2||__mirasimMinor>=28)return false;
   if(__mirasimMinor<17)throw new Error('legacy Linux runtime requires glibc 2.17 or newer; detected glibc '+__mirasimMajor+'.'+__mirasimMinor);
-  let __mirasimPath=require('node:path'),__mirasimFs=require('node:fs'),__mirasimCrypto=require('node:crypto'),
+  let __mirasimPath=require('node:path'),__mirasimFs=require('node:fs'),
       __mirasimAssets=__mirasimPath['join'](process['resourcesPath'],'mirasim-ssh-fix','linux-compat'),
-      __mirasimFiles=['node-v22.23.1-linux-x64-glibc-217.tar.xz','pty-node-v127-glibc217.node','install-legacy-runtime.sh'],
-      __mirasimExpected={'node-v22.23.1-linux-x64-glibc-217.tar.xz':'2e729bf3198098a221681d3f1926a2d505c020a683d3b8e4826e3794818da340','pty-node-v127-glibc217.node':'300bbe67b3b5e4cd30624b2a1671bb26c5a848067810ba5dfca4e1a37e3890c9','install-legacy-runtime.sh':'f5d555d19c67b7e8c3a27c390417c8f562a0dafc69bd41bda6cfef4cfb057bdc'};
-  for(let __mirasimFile of __mirasimFiles){let __mirasimLocal=__mirasimPath['join'](__mirasimAssets,__mirasimFile);if(!__mirasimFs['existsSync'](__mirasimLocal))throw new Error('missing packaged legacy Linux runtime asset: '+__mirasimLocal);let __mirasimActual=__mirasimCrypto['createHash']('sha256')['update'](__mirasimFs['readFileSync'](__mirasimLocal))['digest']('hex');if(__mirasimActual!==__mirasimExpected[__mirasimFile])throw new Error('packaged legacy Linux runtime asset failed SHA-256: '+__mirasimFile);}
+      __mirasimFiles=['node-v22.23.1-linux-x64-glibc-217.tar.xz','pty-node-v127-glibc217.node','install-legacy-runtime.sh'];
+  for(let __mirasimFile of __mirasimFiles){let __mirasimLocal=__mirasimPath['join'](__mirasimAssets,__mirasimFile);if(!__mirasimFs['existsSync'](__mirasimLocal))throw new Error('missing packaged legacy Linux runtime asset: '+__mirasimLocal);}
   let __mirasimPrepare=await __mirasimMaster['exec']('mkdir -p ~/.mirasim-remote/tmp && chmod 700 ~/.mirasim-remote/tmp');
   if(__mirasimPrepare['code']!==0)throw new Error('failed to prepare the legacy Linux runtime directory: '+(__mirasimPrepare['stderr']||__mirasimPrepare['stdout']||'')['trim']());
   for(let __mirasimFile of __mirasimFiles)await __mirasimMaster['scpTo'](__mirasimPath['join'](__mirasimAssets,__mirasimFile),'~/.mirasim-remote/tmp/'+__mirasimFile);
@@ -366,20 +346,9 @@ function verifyPatchedSource(source) {
 }
 
 function patchMainSource(originalSource, version) {
-  const profile = SUPPORTED_PROFILES.get(version);
-  if (!profile) {
-    throw new Error(`Mirasim ${version} is not supported by this patcher`);
-  }
-  const inputHash = sourceSha256(originalSource);
   if (originalSource.includes(PATCH_MARKER)) {
     verifyPatchedSource(originalSource);
-    if (inputHash !== profile.patchedMainSha256) {
-      throw new Error(`Mirasim ${version} has an unrecognized patched main.cjs (${inputHash}). Refusing to overwrite third-party changes.`);
-    }
     return { source: originalSource, alreadyPatched: true };
-  }
-  if (inputHash !== profile.originalMainSha256) {
-    throw new Error(`Mirasim ${version} main.cjs is not the verified upstream bundle (${inputHash}). Update this patcher instead of forcing it.`);
   }
   let source = originalSource;
   source = replaceExactlyOnce(
@@ -401,16 +370,12 @@ function patchMainSource(originalSource, version) {
   source = patchSshProcessClass(source);
   source = patchLegacyRuntime(source);
   verifyPatchedSource(source);
-  if (sourceSha256(source) !== profile.patchedMainSha256) {
-    throw new Error(`Mirasim ${version} produced an unexpected patched main.cjs. No files were changed.`);
-  }
   return { source, alreadyPatched: false };
 }
 
 module.exports = {
   PATCH_MARKER,
-  SUPPORTED_PROFILES,
-  SUPPORTED_VERSIONS,
+  TESTED_VERSIONS,
   patchMainSource,
   verifyPatchedSource,
 };

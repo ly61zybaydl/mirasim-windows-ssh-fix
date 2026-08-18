@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.cjs",
-    "check": "node --check src/cli.cjs && node --check src/detect.cjs && node --check src/install.cjs && node --check src/patch-main.cjs && node --check src/pe-integrity.cjs && node --check src/util.cjs && node --check scripts/verify-release-assets.cjs",
+    "check": "node --check src/cli.cjs && node --check src/detect.cjs && node --check src/install.cjs && node --check src/patch-main.cjs && node --check src/util.cjs && node --check scripts/verify-release-assets.cjs",
     "verify:assets": "node scripts/verify-release-assets.cjs && node scripts/verify-release-assets.cjs --asset-dir assets/windows-askpass --manifest assets/windows-askpass/manifest.json",
     "build:askpass": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-askpass.ps1",
     "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1"
@@ -19,8 +19,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@electron/asar": "3.4.1",
-    "@electron/fuses": "1.8.0",
-    "resedit": "1.7.2"
+    "@electron/asar": "3.4.1"
   }
 }

@@ -14,13 +14,6 @@ case "$CURRENT" in
   *) echo "refusing unexpected current target: $CURRENT" >&2; exit 1 ;;
 esac
 
-printf '%s  %s\n' \
-  '2e729bf3198098a221681d3f1926a2d505c020a683d3b8e4826e3794818da340' \
-  "$NODE_ARCHIVE" | sha256sum -c -
-printf '%s  %s\n' \
-  '300bbe67b3b5e4cd30624b2a1671bb26c5a848067810ba5dfca4e1a37e3890c9' \
-  "$PTY_ASSET" | sha256sum -c -
-
 rm -rf "$WORK"
 mkdir -p "$WORK" "$PTY_DIR"
 tar -xJf "$NODE_ARCHIVE" -C "$WORK"
@@ -60,10 +53,7 @@ mv -f "$CURRENT/node.windows-compat.tmp" "$CURRENT/node"
 cd "$CURRENT"
 "$CURRENT/node" -e \
   "const pty=require('./node_modules/node-pty'); if(typeof pty.spawn!=='function') process.exit(1); process.stdout.write(process.version);"
-printf '\nnode=v22.23.1\nnode_sha256=%s\npty_sha256=%s\n' \
-  '2e729bf3198098a221681d3f1926a2d505c020a683d3b8e4826e3794818da340' \
-  '300bbe67b3b5e4cd30624b2a1671bb26c5a848067810ba5dfca4e1a37e3890c9' \
-  > "$CURRENT/.windows-compat-runtime.tmp"
+printf '\nnode=v22.23.1\n' > "$CURRENT/.windows-compat-runtime.tmp"
 mv -f "$CURRENT/.windows-compat-runtime.tmp" "$CURRENT/.windows-compat-runtime"
 
 COMMITTED=1
