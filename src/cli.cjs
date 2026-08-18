@@ -54,6 +54,8 @@ function humanStatus(result) {
     `Directory: ${result.installDirectory}`,
     `Tested version: ${result.testedVersion ? "yes" : "no (will still be attempted)"}`,
     `Windows SSH patch: ${result.patched ? "installed" : "not installed"}`,
+    `Main-process SSH support: ${result.mainPatched ? "installed" : "not installed"}`,
+    `Frontend SSH entry: ${result.frontend.unlocked ? "enabled" : "blocked"}`,
     `Helper files: ${result.assets.present ? "installed" : "missing"}`,
   ];
   if (result.assets.missing.length > 0) lines.push(`Missing: ${result.assets.missing.join(", ")}`);

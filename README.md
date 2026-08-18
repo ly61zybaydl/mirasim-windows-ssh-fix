@@ -18,7 +18,7 @@
 
 ## 它解决什么
 
-Mirasim Desktop 的 Windows 构建中，Remote SSH 入口和若干只适用于 Unix 的实现会阻止连接。此工具针对受支持版本修复 Windows 平台限制、SSH askpass、端口转发、`scp` 和进程停止逻辑，并为旧 glibc 的 Linux x86_64 主机附带兼容运行时。Windows askpass 使用仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
+Mirasim Desktop 的 Windows 构建中，Remote SSH 前端入口和若干只适用于 Unix 的主进程实现会阻止连接。此工具同时开放前端的 SSH 主机管理界面，并修复 Windows 平台限制、SSH askpass、端口转发、`scp` 和进程停止逻辑；还为旧 glibc 的 Linux x86_64 主机附带兼容运行时。Windows askpass 使用仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
 
 补丁过程会先备份原始 `app.asar`，然后修改该文件并安装辅助资源。`restore` 可用来恢复工具创建的备份。
 
@@ -41,6 +41,8 @@ Mirasim-SSH-Fix.cmd apply
 Mirasim-SSH-Fix.cmd repair
 Mirasim-SSH-Fix.cmd restore
 ```
+
+如果已经使用过 `v0.1.0`，请下载 `v0.1.1` 或更高版本，关闭 Mirasim 后运行一次 `Mirasim-SSH-Fix.cmd repair`。新版会补上旧版遗漏的 Windows 前端 SSH 入口。
 
 如果 Mirasim 安装在非默认位置：
 
@@ -123,4 +125,4 @@ Mirasim 的连接表单不会自动导入整份 `.ssh/config`。请在表单中�
 
 ---
 
-**English summary:** This is an unofficial, reversible Windows Remote SSH patcher for Mirasim Desktop. It backs up and modifies `resources/app.asar` without modifying `Mirasim.exe`. Use the complete release ZIP, not GitHub's generated source archive. Official Mirasim updates can overwrite the patch; run `status` and then `repair` afterward. Tested versions are listed above; other versions are attempted when their internal structure is compatible. The patcher never reads, copies, or uploads private-key contents.
+**English summary:** This is an unofficial, reversible Windows Remote SSH patcher for Mirasim Desktop. It enables the Windows SSH host-manager UI and patches the corresponding main-process implementation. It backs up and modifies `resources/app.asar` without modifying `Mirasim.exe`. Use the complete release ZIP, not GitHub's generated source archive. Official Mirasim updates can overwrite the patch; run `status` and then `repair` afterward. Tested versions are listed above; other versions are attempted when their internal structure is compatible. The patcher never reads, copies, or uploads private-key contents.

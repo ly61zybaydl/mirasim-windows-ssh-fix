@@ -7,6 +7,11 @@ const { execFileSync } = require("node:child_process");
 const asar = require("@electron/asar");
 const { inspectPackage, resolveInstallation } = require("./detect.cjs");
 const { PATCH_MARKER, TESTED_VERSIONS, patchMainSource } = require("./patch-main.cjs");
+const {
+  analyzeRendererSources,
+  patchRendererDirectory,
+  rendererBundleEntries,
+} = require("./patch-renderer.cjs");
 
 const TOOL_VERSION = require("../package.json").version;
 const TOOL_ROOT = path.resolve(__dirname, "..");
@@ -140,10 +145,20 @@ function replaceAsar(stagedPath, livePath) {
   asar.uncache(livePath);
 }
 
+function rendererStatusFromAsar(asarPath) {
+  const entries = rendererBundleEntries(asar.listPackage(asarPath));
+  return analyzeRendererSources(entries.map((entry) => ({
+    path: entry,
+    source: asar.extractFile(asarPath, entry).toString("utf8"),
+  })));
+}
+
 async function status(options = {}) {
   const installDirectory = resolveInstallation(options.app);
   const app = inspectPackage(installDirectory);
   const mainSource = asar.extractFile(app.asarPath, "dist/main.cjs").toString("utf8");
+  const mainPatched = mainSource.includes(PATCH_MARKER);
+  const frontend = rendererStatusFromAsar(app.asarPath);
   const state = readState();
   const relevantState = state && typeof state.installDirectory === "string" &&
     path.resolve(state.installDirectory) === path.resolve(app.installDirectory)
@@ -154,7 +169,9 @@ async function status(options = {}) {
     version: app.packageJson.version,
     supported: true,
     testedVersion: TESTED_VERSIONS.has(app.packageJson.version),
-    patched: mainSource.includes(PATCH_MARKER),
+    patched: mainPatched && frontend.unlocked,
+    mainPatched,
+    frontend,
     assets: installedAssets(path.dirname(app.asarPath)),
     state: relevantState,
   };
@@ -167,7 +184,8 @@ async function apply(options = {}) {
   assertMirasimClosed(app.exePath);
 
   const currentMain = asar.extractFile(app.asarPath, "dist/main.cjs").toString("utf8");
-  if (currentMain.includes(PATCH_MARKER)) {
+  const currentFrontend = rendererStatusFromAsar(app.asarPath);
+  if (currentMain.includes(PATCH_MARKER) && currentFrontend.unlocked) {
     installAssets(path.dirname(app.asarPath));
     const currentStatus = await status({ app: app.installDirectory });
     return { changed: false, status: currentStatus, message: "Mirasim is already patched; helper files were refreshed" };
@@ -187,6 +205,10 @@ async function apply(options = {}) {
     const mainPath = path.join(extracted, "dist", "main.cjs");
     const patchedMain = patchMainSource(fs.readFileSync(mainPath, "utf8"), version);
     fs.writeFileSync(mainPath, patchedMain.source, "utf8");
+    const patchedFrontend = patchRendererDirectory(extracted);
+    if (!patchedFrontend.unlocked) {
+      throw new Error("Could not locate the Mirasim Remote SSH frontend bundle");
+    }
     await createAsar(extracted, stagedAsar);
     replaceAsar(stagedAsar, app.asarPath);
     installAssets(path.dirname(app.asarPath));
@@ -217,8 +239,8 @@ async function repair(options = {}) {
   const installDirectory = resolveInstallation(options.app);
   const app = inspectPackage(installDirectory);
   assertMirasimClosed(app.exePath);
-  const mainSource = asar.extractFile(app.asarPath, "dist/main.cjs").toString("utf8");
-  if (!mainSource.includes(PATCH_MARKER)) return apply({ ...options, app: app.installDirectory });
+  const currentStatus = await status({ app: app.installDirectory });
+  if (!currentStatus.patched) return apply({ ...options, app: app.installDirectory });
 
   installAssets(path.dirname(app.asarPath));
   const currentState = readState();
