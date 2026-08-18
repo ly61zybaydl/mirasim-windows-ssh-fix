@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3
+
+- Support Mirasim Desktop 0.0.208 and its native Windows Remote SSH transport.
+- Detect Windows SSH capabilities instead of selecting a patch path from a fixed version list.
+- Keep the native Windows plain tunnel alive when an unrelated SSH-config `RemoteForward` fails.
+- Install the glibc 2.17 compatibility runtime after a newly delivered remote payload becomes active, including remote server 0.0.208.
+- Ignore downloaded UI runtimes that are not newer than the bundled Desktop version.
+
 ## 0.1.2
 
 - Patch the active downloaded Mirasim UI runtime selected from `.mirasim/app/state.json`, not only the bundled fallback renderer.

@@ -12,16 +12,16 @@
 | 项目 | 支持情况 |
 | --- | --- |
 | 本机系统 | Windows 10/11 x64 |
-| Mirasim Desktop | `0.0.170`、`0.0.203`、`0.0.205` |
+| Mirasim Desktop | `0.0.170`、`0.0.203`、`0.0.205`、`0.0.208` |
 | Mirasim 下载式 UI runtime | `0.0.207` |
 | 远端系统 | Linux x86_64；旧版兼容运行时已在 Ubuntu 18.04 x64 / glibc 2.27 验证 |
 | SSH 客户端 | Windows OpenSSH (`ssh.exe` / `scp.exe`) |
 
-表中版本已经实际测试。其他 Mirasim Desktop 版本也会尝试按相同结构应用补丁；如果内部代码结构不兼容，工具会直接报告具体错误。
+表中版本已经实际测试。工具不按固定版本号选择补丁路径，而是检测 Windows SSH 能力和远端启动流程；后续版本只要保留兼容的语义结构，也会自动尝试应用。若内部流程、Node API 或 `node-pty` 布局发生不兼容变化，工具会报告具体错误，无法保证永久兼容所有未知版本。
 
 ## 它解决什么
 
-Mirasim Desktop 的 Windows 构建中，Remote SSH 前端入口、Electron IPC bridge 和若干只适用于 Unix 的主进程实现会阻止连接。此工具同时开放前端的 SSH 主机管理界面，并修复 IPC 注册、Windows 平台限制、SSH askpass、端口转发、`scp` 和进程停止逻辑；还为旧 glibc 的 Linux x86_64 主机附带兼容运行时。Windows askpass 使用仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
+较旧 Mirasim Desktop 的 Windows 构建会通过前端入口、Electron IPC bridge 和若干只适用于 Unix 的主进程实现阻止 Remote SSH；工具会补齐这些能力。`0.0.208` 及类似的新架构已原生支持 Windows SSH，工具只修复其隧道策略并为旧 glibc 的 Linux x86_64 主机安装兼容运行时。旧版使用的 Windows askpass 是仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
 
 补丁过程会先备份原始 `app.asar` 和当前下载式 UI runtime 中需要修改的前端文件，然后应用修改并安装辅助资源。`restore` 可用来恢复工具创建的备份。
 
@@ -48,6 +48,8 @@ Mirasim-SSH-Fix.cmd restore
 如果已经使用过 `v0.1.0` 或 `v0.1.1`，请下载 `v0.1.2` 或更高版本，完整退出 Mirasim 后运行一次 `Mirasim-SSH-Fix.cmd repair`，再重新启动 Mirasim。`v0.1.2` 会同时修改 Mirasim 实际加载的下载式 UI runtime、启动 Windows IPC bridge，并避免 `.ssh/config` 中无关的 `RemoteForward` 失败导致连接反复重试。无需清理缓存；单独点击“重启 Server”不会重载 Electron bridge。
 
 无关的 `RemoteForward` 仍可能在 OpenSSH 日志中产生警告；补丁会让 Mirasim 所需的本地隧道继续工作，但不会让那个远程转发本身成功。
+
+如果 Mirasim 已更新到 `0.0.208`，或已经使用过 `v0.1.2`，请使用 `v0.1.3` 或更高版本运行 `repair`。官方更新会覆盖 `app.asar` 和辅助资源；`v0.1.3` 会识别新版原生 Windows SSH 架构，修复其隧道参数，并在 Ubuntu 18.04 / glibc 2.27 等旧系统上为新交付的远端版本重新安装兼容 Node 与 `node-pty`。
 
 如果 Mirasim 安装在非默认位置：
 

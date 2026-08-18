@@ -12,16 +12,16 @@ An unofficial compatibility patcher that enables Mirasim Remote SSH on Windows. 
 | Component | Tested support |
 | --- | --- |
 | Local operating system | Windows 10/11 x64 |
-| Mirasim Desktop | `0.0.170`, `0.0.203`, `0.0.205` |
+| Mirasim Desktop | `0.0.170`, `0.0.203`, `0.0.205`, `0.0.208` |
 | Downloaded Mirasim UI runtime | `0.0.207` |
 | Remote operating system | Linux x86_64; the legacy runtime was verified on Ubuntu 18.04 x64 / glibc 2.27 |
 | SSH client | Windows OpenSSH (`ssh.exe` / `scp.exe`) |
 
-The versions above have been tested directly. The patcher also attempts other Mirasim Desktop versions when they retain a compatible internal structure. If the structure has changed, it reports the part it could not match.
+The versions above have been tested directly. The patcher selects its path by detecting Windows SSH capabilities and the remote launch workflow, not by requiring an exact version number. It also attempts later releases that retain compatible semantic structures. If the internal workflow, required Node APIs, or `node-pty` layout changes incompatibly, the tool reports the unmatched part; permanent compatibility with every unknown future version cannot be guaranteed.
 
 ## What it fixes
 
-The Windows build of Mirasim Desktop blocks Remote SSH through its frontend entry point, Electron IPC bridge, and several main-process implementations that assume a Unix environment. This tool enables the SSH host-management interface and patches IPC registration, Windows platform restrictions, SSH askpass, port forwarding, `scp`, and process termination. It also includes a compatibility runtime for older glibc-based Linux x86_64 hosts.
+Older Windows builds of Mirasim Desktop block Remote SSH through the frontend entry point, Electron IPC bridge, and several main-process implementations that assume a Unix environment. The tool supplies those missing capabilities. Version `0.0.208` and similar newer architectures already provide native Windows SSH, so the tool patches only their tunnel policy and installs a compatibility runtime for older glibc-based Linux x86_64 hosts.
 
 The Windows askpass helper is a small native launcher built from source in this repository. It does not pass prompts through `cmd.exe`, so quotes, percent signs, exclamation marks, and similar characters are not interpreted a second time by a shell.
 
@@ -50,6 +50,8 @@ Mirasim-SSH-Fix.cmd restore
 If you previously used `v0.1.0` or `v0.1.1`, download `v0.1.2` or later, fully exit Mirasim, run `Mirasim-SSH-Fix.cmd repair`, and then restart Mirasim. Version `v0.1.2` patches the downloaded UI runtime that Mirasim actually loads, starts the Windows IPC bridge, and prevents an unrelated `RemoteForward` failure in `.ssh/config` from causing an endless reconnect loop. You do not need to clear any cache. Mirasim's “Restart Server” action alone does not reload the Electron bridge.
 
 The unrelated `RemoteForward` may still produce an OpenSSH warning. The patch keeps Mirasim's required local tunnel alive; it does not make that remote forward succeed.
+
+If Mirasim has updated to `0.0.208`, or if you already used `v0.1.2`, use `v0.1.3` or later and run `repair`. An official update replaces `app.asar` and helper assets. Version `v0.1.3` recognizes the native Windows SSH architecture, fixes its tunnel arguments, and reinstalls compatible Node.js and `node-pty` after a new remote payload is delivered to older systems such as Ubuntu 18.04 / glibc 2.27.
 
 For a non-default installation directory:
 

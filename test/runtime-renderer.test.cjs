@@ -91,3 +91,44 @@ test("pending runtime takes priority over the current good runtime", (t) => {
   );
   assert.equal(activeRuntime().version, "0.0.208");
 });
+
+test("ignores a downloaded runtime that is not newer than the bundled app", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mirasim-runtime-bundled-"));
+  const appRoot = path.join(tempRoot, "app");
+  const oldAppRoot = process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT;
+  process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT = appRoot;
+  t.after(() => {
+    if (oldAppRoot === undefined) delete process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT;
+    else process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT = oldAppRoot;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const dormant = createRuntime(appRoot, "0.0.207");
+  createRuntime(appRoot, "0.0.208-beta.1");
+  fs.writeFileSync(path.join(appRoot, "state.json"), '{"good":"0.0.207"}\n', "utf8");
+
+  const selected = activeRuntime("0.0.208");
+  assert.equal(selected, null);
+  assert.deepEqual(patchRuntimeRenderer(selected).changedFiles, []);
+  assert.equal(fs.readFileSync(dormant.bundlePath, "utf8"), lockedRenderer());
+});
+
+test("selects a future downloaded runtime over an older good runtime", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mirasim-runtime-future-"));
+  const appRoot = path.join(tempRoot, "app");
+  const oldAppRoot = process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT;
+  process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT = appRoot;
+  t.after(() => {
+    if (oldAppRoot === undefined) delete process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT;
+    else process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT = oldAppRoot;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  createRuntime(appRoot, "0.0.207");
+  const future = createRuntime(appRoot, "0.0.209");
+  fs.writeFileSync(path.join(appRoot, "state.json"), '{"good":"0.0.207"}\n', "utf8");
+
+  const selected = activeRuntime("0.0.208");
+  assert.equal(selected.version, "0.0.209");
+  assert.equal(selected.versionDirectory, future.versionRoot);
+});
