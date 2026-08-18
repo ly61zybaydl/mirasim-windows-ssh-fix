@@ -7,7 +7,14 @@ const BRIDGE_PATCH_MARKER = "__mirasimWindowsRemoteSshBridge";
 const BRIDGE_LOG_MARKER = "process['stdout']['write']('[remote-ssh]\\x20not\\x20supported\\x20on\\x20win32";
 const WINDOWS_TUNNEL_OLD_POLICY = "__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=yes'";
 const WINDOWS_TUNNEL_CURRENT_POLICY = "__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=no'";
-const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205"]);
+const WINDOWS_UNSUPPORTED_ERROR = "throw new Error('Remote\\x20SSH\\x20workspaces\\x20are\\x20not\\x20supported\\x20on\\x20Windows\\x20yet.')";
+const NATIVE_WINDOWS_TRANSPORT = /this\['opts'\]\['transport'\]\?\?\(process\['platform'\]==='win32'\?'plain':'mux'\)/;
+const NATIVE_WINDOWS_NAMED_PIPE = /return\s+[\w$]+==='win32'\?'(?:\\x5c){2}\.(?:\\x5c)pipe(?:\\x5c)mirasim-askpass-'\+/;
+const NATIVE_WINDOWS_ASKPASS_WRAPPER = /return\s+[\w$]+==='win32'\?'ssh-askpass-wrapper\.(?:bat|cmd)':'ssh-askpass-wrapper\.sh'/;
+const NATIVE_WINDOWS_PROBE_ASKPASS = /'askpass\.(?:bat|cmd)'/;
+const NATIVE_WINDOWS_SSH_ADD_ASKPASS = /'ssh-add-askpass\.(?:bat|cmd)'/;
+const NATIVE_WINDOWS_PLAIN_TUNNEL = /\['forward'\]\(([\w$]+),([\w$]+)\)\{let\s+[\w$]+=\['-N','-L','127\.0\.0\.1:'\+\1\+':'\+\2,'-oExitOnForwardFailure=(yes|no)'/;
+const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205", "0.0.208"]);
 
 function countOccurrences(source, needle) {
   if (!needle) return 0;
@@ -178,10 +185,52 @@ function migrateWindowsTunnelPolicy(source) {
   );
 }
 
-function isMainPatchCurrent(source) {
-  const bridgeCurrent = !source.includes(BRIDGE_LOG_MARKER) || source.includes(BRIDGE_PATCH_MARKER);
+function nativeWindowsPlainTunnelMatches(source) {
+  return [...source.matchAll(new RegExp(NATIVE_WINDOWS_PLAIN_TUNNEL.source, "g"))];
+}
+
+function isNativeWindowsPlainTunnelCurrent(source) {
+  const matches = nativeWindowsPlainTunnelMatches(source);
+  return matches.length === 1 && matches[0][3] === "no";
+}
+
+function patchNativeWindowsPlainTunnel(source) {
+  const matches = nativeWindowsPlainTunnelMatches(source);
+  if (matches.length !== 1) {
+    throw new Error(`Native Windows plain tunnel: expected one semantic match, found ${matches.length}`);
+  }
+  const match = matches[0];
+  if (match[3] === "no") return source;
+  const oldPolicy = "'-oExitOnForwardFailure=yes'";
+  const policyOffset = match.index + match[0].lastIndexOf(oldPolicy);
+  if (policyOffset < match.index) throw new Error("Native Windows plain tunnel: forward-failure policy was not recognized");
+  return source.slice(0, policyOffset) +
+    "'-oExitOnForwardFailure=no'" +
+    source.slice(policyOffset + oldPolicy.length);
+}
+
+function hasNativeWindowsRemoteSsh(source) {
+  return !source.includes(WINDOWS_UNSUPPORTED_ERROR) &&
+    NATIVE_WINDOWS_TRANSPORT.test(source) &&
+    NATIVE_WINDOWS_NAMED_PIPE.test(source) &&
+    NATIVE_WINDOWS_ASKPASS_WRAPPER.test(source) &&
+    NATIVE_WINDOWS_PROBE_ASKPASS.test(source) &&
+    NATIVE_WINDOWS_SSH_ADD_ASKPASS.test(source) &&
+    nativeWindowsPlainTunnelMatches(source).length === 1;
+}
+
+function hasLegacyRuntimePatch(source) {
   return source.includes(PATCH_MARKER) &&
-    bridgeCurrent &&
+    source.includes("async function __mirasimEnsureLegacyLinuxRuntime") &&
+    source.includes("let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(") &&
+    source.includes("__mirasimMinor<17");
+}
+
+function isMainPatchCurrent(source) {
+  if (!hasLegacyRuntimePatch(source)) return false;
+  if (hasNativeWindowsRemoteSsh(source)) return isNativeWindowsPlainTunnelCurrent(source);
+  const bridgeCurrent = !source.includes(BRIDGE_LOG_MARKER) || source.includes(BRIDGE_PATCH_MARKER);
+  return bridgeCurrent &&
     source.includes(WINDOWS_TUNNEL_CURRENT_POLICY);
 }
 
@@ -361,31 +410,46 @@ function patchLegacyRuntime(source) {
 function verifyPatchedSource(source) {
   const required = [
     PATCH_MARKER,
-    "windows-askpass.exe",
-    "__mirasimProbeAskpassPath",
-    "__mirasimSshAddAskpassPath",
-    "__mirasimWindowsAskpassServer",
-    "__mirasimTunnelChild",
+    "async function __mirasimEnsureLegacyLinuxRuntime",
     "__mirasimLegacyInstalled",
-    "['-oClearAllForwardings=yes']",
-    WINDOWS_TUNNEL_CURRENT_POLICY,
     "__mirasimMinor<17",
   ];
+  const nativeWindows = hasNativeWindowsRemoteSsh(source);
+  if (!nativeWindows) {
+    required.push(
+      "windows-askpass.exe",
+      "__mirasimProbeAskpassPath",
+      "__mirasimSshAddAskpassPath",
+      "__mirasimWindowsAskpassServer",
+      "__mirasimTunnelChild",
+      "['-oClearAllForwardings=yes']",
+      WINDOWS_TUNNEL_CURRENT_POLICY,
+    );
+  } else if (!isNativeWindowsPlainTunnelCurrent(source)) {
+    throw new Error("Patched source verification failed: native Windows plain tunnel still requires ExitOnForwardFailure=no");
+  }
   for (const marker of required) {
     if (!source.includes(marker)) throw new Error(`Patched source verification failed: ${marker} is missing`);
   }
-  if (source.includes(BRIDGE_LOG_MARKER) && !source.includes(BRIDGE_PATCH_MARKER)) {
+  if (!nativeWindows && source.includes(BRIDGE_LOG_MARKER) && !source.includes(BRIDGE_PATCH_MARKER)) {
     throw new Error(`Patched source verification failed: ${BRIDGE_PATCH_MARKER} is missing`);
   }
-  if (source.includes("throw new Error('Remote\\x20SSH\\x20workspaces\\x20are\\x20not\\x20supported\\x20on\\x20Windows\\x20yet.')")) {
+  if (source.includes(WINDOWS_UNSUPPORTED_ERROR)) {
     throw new Error("Patched source verification failed: Windows platform guard remains");
   }
   new vm.Script(source, { filename: "dist/main.cjs" });
 }
 
 function patchMainSource(originalSource, version) {
+  if (hasNativeWindowsRemoteSsh(originalSource)) {
+    let source = patchLegacyRuntime(originalSource);
+    source = patchNativeWindowsPlainTunnel(source);
+    verifyPatchedSource(source);
+    return { source, alreadyPatched: source === originalSource };
+  }
   if (originalSource.includes(PATCH_MARKER)) {
-    let migratedSource = patchRemoteSshBridge(originalSource);
+    let migratedSource = patchLegacyRuntime(originalSource);
+    migratedSource = patchRemoteSshBridge(migratedSource);
     migratedSource = migrateWindowsTunnelPolicy(migratedSource);
     verifyPatchedSource(migratedSource);
     return { source: migratedSource, alreadyPatched: migratedSource === originalSource };
@@ -418,6 +482,7 @@ module.exports = {
   BRIDGE_PATCH_MARKER,
   PATCH_MARKER,
   TESTED_VERSIONS,
+  hasNativeWindowsRemoteSsh,
   isMainPatchCurrent,
   patchMainSource,
   verifyPatchedSource,

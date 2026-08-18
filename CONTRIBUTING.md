@@ -37,7 +37,7 @@ The source repository omits the large runtime files listed in `assets/linux-comp
 5. Run an opt-in remote connection test using environment variables; never hard-code a real host, IP, username or key path.
 6. Document the supported version and platform limits.
 
-Local-only compatibility tests accept `MIRASIM_FIXTURE_0170_MAIN`, `MIRASIM_FIXTURE_0203_MAIN`, and `MIRASIM_FIXTURE_0205_ASAR`. CI leaves them unset; never add a private Mirasim fixture to the repository.
+Local-only compatibility tests accept `MIRASIM_FIXTURE_0170_MAIN`, `MIRASIM_FIXTURE_0203_MAIN`, `MIRASIM_FIXTURE_0205_ASAR`, `MIRASIM_FIXTURE_0208_ASAR`, and the corresponding `MIRASIM_FIXTURE_*_RENDERER` variables used by the renderer tests. CI leaves them unset; never add a private Mirasim fixture to the repository.
 
 ## Third-party changes
 

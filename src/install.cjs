@@ -71,6 +71,44 @@ function runtimeAppRoot() {
   return path.join(mirasimHome(), "app");
 }
 
+function parseSemanticVersion(version) {
+  if (typeof version !== "string") return null;
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(version.trim());
+  if (!match) return null;
+  return {
+    core: match.slice(1, 4).map(Number),
+    prerelease: match[4] === undefined ? null : match[4].split("."),
+  };
+}
+
+function compareSemanticVersions(left, right) {
+  const parsedLeft = parseSemanticVersion(left);
+  const parsedRight = parseSemanticVersion(right);
+  if (!parsedLeft || !parsedRight) return null;
+  for (let index = 0; index < parsedLeft.core.length; index += 1) {
+    if (parsedLeft.core[index] !== parsedRight.core[index]) {
+      return parsedLeft.core[index] < parsedRight.core[index] ? -1 : 1;
+    }
+  }
+  if (parsedLeft.prerelease === null || parsedRight.prerelease === null) {
+    if (parsedLeft.prerelease === parsedRight.prerelease) return 0;
+    return parsedLeft.prerelease === null ? 1 : -1;
+  }
+  const length = Math.max(parsedLeft.prerelease.length, parsedRight.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = parsedLeft.prerelease[index];
+    const rightPart = parsedRight.prerelease[index];
+    if (leftPart === undefined || rightPart === undefined) return leftPart === undefined ? -1 : 1;
+    if (leftPart === rightPart) continue;
+    const leftNumeric = /^\d+$/.test(leftPart);
+    const rightNumeric = /^\d+$/.test(rightPart);
+    if (leftNumeric && rightNumeric) return Number(leftPart) < Number(rightPart) ? -1 : 1;
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    return leftPart < rightPart ? -1 : 1;
+  }
+  return 0;
+}
+
 function readRuntimePayload(versionDirectory) {
   const payloadPath = path.join(versionDirectory, "payload.json");
   if (!fs.existsSync(payloadPath)) return null;
@@ -90,10 +128,14 @@ function readRuntimePayload(versionDirectory) {
   }
 }
 
-function activeRuntime() {
+function activeRuntime(bundledVersion = null) {
   if (process.env.MIRASIM_APP_DIR) {
     const selected = readRuntimePayload(path.resolve(process.env.MIRASIM_APP_DIR));
     if (selected) return selected;
+  }
+
+  if (bundledVersion !== null && parseSemanticVersion(bundledVersion) === null) {
+    throw new Error(`Could not compare the bundled Mirasim version: ${bundledVersion}`);
   }
 
   const root = runtimeAppRoot();
@@ -111,12 +153,22 @@ function activeRuntime() {
   const versions = fs.readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
+    .sort((left, right) => {
+      const comparison = compareSemanticVersions(right, left);
+      return comparison === null
+        ? right.localeCompare(left, undefined, { numeric: true })
+        : comparison;
+    });
   preferred.push(...versions);
 
   for (const version of [...new Set(preferred)]) {
     const selected = readRuntimePayload(path.join(root, version));
-    if (selected) return selected;
+    if (!selected) continue;
+    if (bundledVersion !== null) {
+      const comparison = compareSemanticVersions(selected.version, bundledVersion);
+      if (comparison === null || comparison <= 0) continue;
+    }
+    return selected;
   }
   return null;
 }
@@ -273,7 +325,7 @@ async function status(options = {}) {
   const mainSource = asar.extractFile(app.asarPath, "dist/main.cjs").toString("utf8");
   const mainPatched = isMainPatchCurrent(mainSource);
   const bundledFrontend = rendererStatusFromAsar(app.asarPath);
-  const runtime = activeRuntime();
+  const runtime = activeRuntime(app.packageJson.version);
   const runtimeFrontend = runtimeRendererStatus(runtime);
   const frontend = runtimeFrontend && runtimeFrontend.applicable
     ? runtimeFrontend
@@ -311,7 +363,7 @@ async function apply(options = {}) {
 
   const currentMain = asar.extractFile(app.asarPath, "dist/main.cjs").toString("utf8");
   const currentBundledFrontend = rendererStatusFromAsar(app.asarPath);
-  const runtime = activeRuntime();
+  const runtime = activeRuntime(app.packageJson.version);
   const currentRuntimeFrontend = runtimeRendererStatus(runtime);
   const asarComplete = isMainPatchCurrent(currentMain) &&
     currentBundledFrontend.unlocked;
