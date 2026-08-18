@@ -32,7 +32,7 @@ test("resolveInstallation honors an explicit complete directory", () => {
     fs.mkdirSync(path.join(directory, "resources"));
     fs.writeFileSync(path.join(directory, "Mirasim.exe"), "placeholder");
     fs.writeFileSync(path.join(directory, "resources", "app.asar"), "placeholder");
-    assert.equal(resolveInstallation(directory, unrelatedToolDirectory), path.resolve(directory));
+    assert.equal(resolveInstallation(directory, unrelatedToolDirectory), fs.realpathSync.native(directory));
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
     fs.rmSync(unrelatedToolDirectory, { recursive: true, force: true });
