@@ -40,7 +40,7 @@ Usage:
 
 Commands:
   status   Detect version, patch state, and helper files
-  apply    Back up and patch Mirasim app.asar
+  apply    Back up and patch Mirasim app.asar and active UI runtime
   repair   Reapply after an update or restore missing compatibility assets
   restore  Restore the backup for the installed Mirasim version
 
@@ -49,13 +49,15 @@ Tested versions are shown by status. Other versions are attempted and report an 
 }
 
 function humanStatus(result) {
+  const frontendSource = result.runtime ? `runtime v${result.runtime.version}` : "bundled";
   const lines = [
     `Mirasim ${result.version}`,
     `Directory: ${result.installDirectory}`,
     `Tested version: ${result.testedVersion ? "yes" : "no (will still be attempted)"}`,
     `Windows SSH patch: ${result.patched ? "installed" : "not installed"}`,
     `Main-process SSH support: ${result.mainPatched ? "installed" : "not installed"}`,
-    `Frontend SSH entry: ${result.frontend.unlocked ? "enabled" : "blocked"}`,
+    `Frontend SSH entry (${frontendSource}): ${result.frontend.unlocked ? "enabled" : "blocked"}`,
+    `Bundled frontend fallback: ${result.bundledFrontend.unlocked ? "enabled" : "blocked"}`,
     `Helper files: ${result.assets.present ? "installed" : "missing"}`,
   ];
   if (result.assets.missing.length > 0) lines.push(`Missing: ${result.assets.missing.join(", ")}`);

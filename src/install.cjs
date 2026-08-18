@@ -6,11 +6,18 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const asar = require("@electron/asar");
 const { inspectPackage, resolveInstallation } = require("./detect.cjs");
-const { PATCH_MARKER, TESTED_VERSIONS, patchMainSource } = require("./patch-main.cjs");
 const {
+  TESTED_VERSIONS,
+  isMainPatchCurrent,
+  patchMainSource,
+} = require("./patch-main.cjs");
+const {
+  analyzeRendererFiles,
   analyzeRendererSources,
   patchRendererDirectory,
+  patchRendererSource,
   rendererBundleEntries,
+  rendererBundlePaths,
 } = require("./patch-renderer.cjs");
 
 const TOOL_VERSION = require("../package.json").version;
@@ -50,6 +57,113 @@ function dataRoot() {
 
 function backupDirectory(version) {
   return path.join(dataRoot(), "backups", version);
+}
+
+function mirasimHome() {
+  if (process.env.MIRASIM_HOME) return path.resolve(process.env.MIRASIM_HOME);
+  return path.join(os.homedir(), ".mirasim");
+}
+
+function runtimeAppRoot() {
+  if (process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT) {
+    return path.resolve(process.env.MIRASIM_SSH_FIX_RUNTIME_APP_ROOT);
+  }
+  return path.join(mirasimHome(), "app");
+}
+
+function readRuntimePayload(versionDirectory) {
+  const payloadPath = path.join(versionDirectory, "payload.json");
+  if (!fs.existsSync(payloadPath)) return null;
+  try {
+    const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
+    if (typeof payload.version !== "string" || typeof payload.renderer !== "string") return null;
+    const rendererIndex = path.resolve(versionDirectory, payload.renderer);
+    if (!fs.existsSync(rendererIndex)) return null;
+    return {
+      version: payload.version,
+      versionDirectory,
+      rendererIndex,
+      rendererDirectory: path.dirname(rendererIndex),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function activeRuntime() {
+  if (process.env.MIRASIM_APP_DIR) {
+    const selected = readRuntimePayload(path.resolve(process.env.MIRASIM_APP_DIR));
+    if (selected) return selected;
+  }
+
+  const root = runtimeAppRoot();
+  if (!fs.existsSync(root)) return null;
+  let state = {};
+  try {
+    state = JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8"));
+  } catch {
+    state = {};
+  }
+
+  const preferred = [];
+  if (typeof state.pending === "string" && state.pending !== state.good) preferred.push(state.pending);
+  if (typeof state.good === "string") preferred.push(state.good);
+  const versions = fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
+  preferred.push(...versions);
+
+  for (const version of [...new Set(preferred)]) {
+    const selected = readRuntimePayload(path.join(root, version));
+    if (selected) return selected;
+  }
+  return null;
+}
+
+function runtimeRendererStatus(runtime) {
+  if (!runtime) return null;
+  return analyzeRendererFiles(rendererBundlePaths(runtime.rendererDirectory));
+}
+
+function runtimeBackupPath(runtime, filePath) {
+  const relative = path.relative(runtime.versionDirectory, filePath);
+  return path.join(dataRoot(), "backups", "runtime", runtime.version, relative);
+}
+
+function patchRuntimeRenderer(runtime) {
+  if (!runtime) return { changedFiles: [], backups: [], status: null };
+  const filePaths = rendererBundlePaths(runtime.rendererDirectory);
+  const changedFiles = [];
+  const backups = [];
+  for (const filePath of filePaths) {
+    const result = patchRendererSource(fs.readFileSync(filePath, "utf8"));
+    if (!result.changed) continue;
+    const backupPath = runtimeBackupPath(runtime, filePath);
+    fs.mkdirSync(path.dirname(backupPath), { recursive: true });
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath);
+    fs.writeFileSync(filePath, result.source, "utf8");
+    changedFiles.push(filePath);
+    backups.push({
+      version: runtime.version,
+      originalPath: filePath,
+      backupPath,
+    });
+  }
+  return {
+    changedFiles,
+    backups,
+    status: runtimeRendererStatus(runtime),
+  };
+}
+
+function mergeRuntimeBackups(existing, added) {
+  const records = new Map();
+  for (const item of [...(existing || []), ...(added || [])]) {
+    if (!item || typeof item.originalPath !== "string" || typeof item.backupPath !== "string") continue;
+    records.set(path.resolve(item.originalPath).toLowerCase(), item);
+  }
+  return [...records.values()];
 }
 
 function statePath() {
@@ -157,8 +271,13 @@ async function status(options = {}) {
   const installDirectory = resolveInstallation(options.app);
   const app = inspectPackage(installDirectory);
   const mainSource = asar.extractFile(app.asarPath, "dist/main.cjs").toString("utf8");
-  const mainPatched = mainSource.includes(PATCH_MARKER);
-  const frontend = rendererStatusFromAsar(app.asarPath);
+  const mainPatched = isMainPatchCurrent(mainSource);
+  const bundledFrontend = rendererStatusFromAsar(app.asarPath);
+  const runtime = activeRuntime();
+  const runtimeFrontend = runtimeRendererStatus(runtime);
+  const frontend = runtimeFrontend && runtimeFrontend.applicable
+    ? runtimeFrontend
+    : bundledFrontend;
   const state = readState();
   const relevantState = state && typeof state.installDirectory === "string" &&
     path.resolve(state.installDirectory) === path.resolve(app.installDirectory)
@@ -172,6 +291,13 @@ async function status(options = {}) {
     patched: mainPatched && frontend.unlocked,
     mainPatched,
     frontend,
+    bundledFrontend,
+    runtime: runtime ? {
+      version: runtime.version,
+      versionDirectory: runtime.versionDirectory,
+      rendererIndex: runtime.rendererIndex,
+      frontend: runtimeFrontend,
+    } : null,
     assets: installedAssets(path.dirname(app.asarPath)),
     state: relevantState,
   };
@@ -184,8 +310,13 @@ async function apply(options = {}) {
   assertMirasimClosed(app.exePath);
 
   const currentMain = asar.extractFile(app.asarPath, "dist/main.cjs").toString("utf8");
-  const currentFrontend = rendererStatusFromAsar(app.asarPath);
-  if (currentMain.includes(PATCH_MARKER) && currentFrontend.unlocked) {
+  const currentBundledFrontend = rendererStatusFromAsar(app.asarPath);
+  const runtime = activeRuntime();
+  const currentRuntimeFrontend = runtimeRendererStatus(runtime);
+  const asarComplete = isMainPatchCurrent(currentMain) &&
+    currentBundledFrontend.unlocked;
+  const runtimeComplete = !runtime || (currentRuntimeFrontend && currentRuntimeFrontend.unlocked);
+  if (asarComplete && runtimeComplete) {
     installAssets(path.dirname(app.asarPath));
     const currentStatus = await status({ app: app.installDirectory });
     return { changed: false, status: currentStatus, message: "Mirasim is already patched; helper files were refreshed" };
@@ -197,31 +328,46 @@ async function apply(options = {}) {
   fs.mkdirSync(backup, { recursive: true });
   if (!fs.existsSync(backupAsar)) fs.copyFileSync(app.asarPath, backupAsar);
 
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mirasim-ssh-fix-"));
-  const extracted = path.join(tempRoot, "app");
-  const stagedAsar = path.join(tempRoot, "app.asar");
-  try {
-    asar.extractAll(app.asarPath, extracted);
-    const mainPath = path.join(extracted, "dist", "main.cjs");
-    const patchedMain = patchMainSource(fs.readFileSync(mainPath, "utf8"), version);
-    fs.writeFileSync(mainPath, patchedMain.source, "utf8");
-    const patchedFrontend = patchRendererDirectory(extracted);
-    if (!patchedFrontend.unlocked) {
-      throw new Error("Could not locate the Mirasim Remote SSH frontend bundle");
+  if (!asarComplete) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mirasim-ssh-fix-"));
+    const extracted = path.join(tempRoot, "app");
+    const stagedAsar = path.join(tempRoot, "app.asar");
+    try {
+      asar.extractAll(app.asarPath, extracted);
+      const mainPath = path.join(extracted, "dist", "main.cjs");
+      const patchedMain = patchMainSource(fs.readFileSync(mainPath, "utf8"), version);
+      fs.writeFileSync(mainPath, patchedMain.source, "utf8");
+      const patchedFrontend = patchRendererDirectory(extracted);
+      if (!patchedFrontend.unlocked) {
+        throw new Error("Could not locate the bundled Mirasim Remote SSH frontend");
+      }
+      await createAsar(extracted, stagedAsar);
+      replaceAsar(stagedAsar, app.asarPath);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
     }
-    await createAsar(extracted, stagedAsar);
-    replaceAsar(stagedAsar, app.asarPath);
-    installAssets(path.dirname(app.asarPath));
-  } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 
+  const runtimeResult = patchRuntimeRenderer(runtime);
+  if (runtime && (!runtimeResult.status || !runtimeResult.status.unlocked)) {
+    throw new Error(`Could not locate the active Mirasim ${runtime.version} Remote SSH frontend`);
+  }
+  installAssets(path.dirname(app.asarPath));
+
+  const previousState = readState();
+  const previousRuntimeBackups = previousState && typeof previousState.installDirectory === "string" &&
+    path.resolve(previousState.installDirectory) === path.resolve(app.installDirectory)
+    ? previousState.runtimeBackups
+    : [];
+
   const newState = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     toolVersion: TOOL_VERSION,
     installDirectory: app.installDirectory,
     mirasimVersion: version,
     backupAsar,
+    runtimeVersion: runtime ? runtime.version : null,
+    runtimeBackups: mergeRuntimeBackups(previousRuntimeBackups, runtimeResult.backups),
     appliedAt: new Date().toISOString(),
     restored: false,
   };
@@ -264,6 +410,11 @@ async function restore(options = {}) {
   const installDirectory = resolveInstallation(options.app);
   const app = inspectPackage(installDirectory);
   assertMirasimClosed(app.exePath);
+  const previousState = readState();
+  const runtimeBackups = previousState && typeof previousState.installDirectory === "string" &&
+    path.resolve(previousState.installDirectory) === path.resolve(app.installDirectory)
+    ? previousState.runtimeBackups || []
+    : [];
   const version = app.packageJson.version;
   const backup = backupDirectory(version);
   const backupAsar = path.join(backup, "app.asar");
@@ -278,13 +429,19 @@ async function restore(options = {}) {
   } finally {
     fs.rmSync(stagedAsar, { force: true });
   }
+  for (const item of runtimeBackups) {
+    if (!item || typeof item.originalPath !== "string" || typeof item.backupPath !== "string") continue;
+    if (!fs.existsSync(item.backupPath) || !fs.existsSync(path.dirname(item.originalPath))) continue;
+    fs.copyFileSync(item.backupPath, item.originalPath);
+  }
   fs.rmSync(path.join(path.dirname(app.asarPath), "mirasim-ssh-fix"), { recursive: true, force: true });
   writeState({
-    schemaVersion: 1,
+    schemaVersion: 2,
     toolVersion: TOOL_VERSION,
     installDirectory: app.installDirectory,
     mirasimVersion: version,
     backupAsar,
+    runtimeBackups,
     restoredAt: new Date().toISOString(),
     restored: true,
   });
@@ -292,14 +449,17 @@ async function restore(options = {}) {
     changed: true,
     backupDirectory: backup,
     status: await status({ app: app.installDirectory }),
-    message: "Original Mirasim app.asar restored",
+    message: "Original Mirasim files restored",
   };
 }
 
 module.exports = {
   apply,
+  activeRuntime,
+  patchRuntimeRenderer,
   repair,
   restore,
+  runtimeRendererStatus,
   status,
   validateAssets,
 };

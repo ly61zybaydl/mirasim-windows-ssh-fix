@@ -59,9 +59,14 @@ function patchRendererSource(originalSource) {
   };
 }
 
-function rendererBundlePaths(extractedAppDirectory) {
-  const assetsDirectory = path.join(extractedAppDirectory, "dist", "renderer", "assets");
-  if (!fs.existsSync(assetsDirectory)) return [];
+function rendererBundlePaths(rendererLocation) {
+  const candidates = [
+    path.join(rendererLocation, "dist", "renderer", "assets"),
+    path.join(rendererLocation, "renderer", "assets"),
+    path.join(rendererLocation, "assets"),
+  ];
+  const assetsDirectory = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!assetsDirectory) return [];
   return fs.readdirSync(assetsDirectory)
     .filter((name) => /^index-.*\.js$/.test(name))
     .sort()
@@ -97,8 +102,8 @@ function analyzeRendererFiles(filePaths) {
   })));
 }
 
-function patchRendererDirectory(extractedAppDirectory) {
-  const filePaths = rendererBundlePaths(extractedAppDirectory);
+function patchRendererDirectory(rendererLocation) {
+  const filePaths = rendererBundlePaths(rendererLocation);
   const changedFiles = [];
   for (const filePath of filePaths) {
     const result = patchRendererSource(fs.readFileSync(filePath, "utf8"));

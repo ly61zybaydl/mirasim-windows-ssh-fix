@@ -3,7 +3,7 @@
 一个面向 Windows 的 Mirasim Remote SSH 兼容补丁工具，支持应用、修复和恢复。
 
 > [!IMPORTANT]
-> 这是社区维护的**非官方工具**，与 Mirasim 官方无隶属或背书关系。它会备份并修改本机 Mirasim 安装目录中的 `resources/app.asar`，但不会修改 `Mirasim.exe`。使用前请关闭 Mirasim，并自行评估风险。
+> 这是社区维护的**非官方工具**，与 Mirasim 官方无隶属或背书关系。它会备份并修改本机 Mirasim 安装目录中的 `resources/app.asar`，以及当前使用的 `%USERPROFILE%\.mirasim\app\<版本>\renderer` 前端，但不会修改 `Mirasim.exe`。使用前请关闭 Mirasim，并自行评估风险。
 
 ## 当前测试范围
 
@@ -11,6 +11,7 @@
 | --- | --- |
 | 本机系统 | Windows 10/11 x64 |
 | Mirasim Desktop | `0.0.170`、`0.0.203`、`0.0.205` |
+| Mirasim 下载式 UI runtime | `0.0.207` |
 | 远端系统 | Linux x86_64；旧版兼容运行时已在 Ubuntu 18.04 x64 / glibc 2.27 验证 |
 | SSH 客户端 | Windows OpenSSH (`ssh.exe` / `scp.exe`) |
 
@@ -18,9 +19,9 @@
 
 ## 它解决什么
 
-Mirasim Desktop 的 Windows 构建中，Remote SSH 前端入口和若干只适用于 Unix 的主进程实现会阻止连接。此工具同时开放前端的 SSH 主机管理界面，并修复 Windows 平台限制、SSH askpass、端口转发、`scp` 和进程停止逻辑；还为旧 glibc 的 Linux x86_64 主机附带兼容运行时。Windows askpass 使用仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
+Mirasim Desktop 的 Windows 构建中，Remote SSH 前端入口、Electron IPC bridge 和若干只适用于 Unix 的主进程实现会阻止连接。此工具同时开放前端的 SSH 主机管理界面，并修复 IPC 注册、Windows 平台限制、SSH askpass、端口转发、`scp` 和进程停止逻辑；还为旧 glibc 的 Linux x86_64 主机附带兼容运行时。Windows askpass 使用仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
 
-补丁过程会先备份原始 `app.asar`，然后修改该文件并安装辅助资源。`restore` 可用来恢复工具创建的备份。
+补丁过程会先备份原始 `app.asar` 和当前下载式 UI runtime 中需要修改的前端文件，然后应用修改并安装辅助资源。`restore` 可用来恢复工具创建的备份。
 
 ## 获取与使用
 
@@ -42,7 +43,7 @@ Mirasim-SSH-Fix.cmd repair
 Mirasim-SSH-Fix.cmd restore
 ```
 
-如果已经使用过 `v0.1.0`，请下载 `v0.1.1` 或更高版本，关闭 Mirasim 后运行一次 `Mirasim-SSH-Fix.cmd repair`。新版会补上旧版遗漏的 Windows 前端 SSH 入口。
+如果已经使用过 `v0.1.0` 或 `v0.1.1`，请下载 `v0.1.2` 或更高版本，完整退出 Mirasim 后运行一次 `Mirasim-SSH-Fix.cmd repair`，再重新启动 Mirasim。`v0.1.2` 会同时修改 Mirasim 实际加载的下载式 UI runtime、启动 Windows IPC bridge，并避免 `.ssh/config` 中无关的 `RemoteForward` 失败导致连接反复重试。无需清理缓存；单独点击“重启 Server”不会重载 Electron bridge。
 
 如果 Mirasim 安装在非默认位置：
 
@@ -75,7 +76,7 @@ node src/cli.cjs status
 
 ## 软件更新会覆盖补丁吗？
 
-**会。** Mirasim 的 Windows 安装器更新通常会重装应用目录，因此 `resources/app.asar` 和本工具安装的兼容资源可能被替换。补丁工具及其外部备份通常仍保留。
+**会。** Mirasim 的 Windows 安装器更新通常会重装应用目录；Mirasim 还会单独下载新的 UI runtime。因此 `resources/app.asar`、当前 runtime 前端和本工具安装的兼容资源都可能被替换。补丁工具及其外部备份通常仍保留。
 
 更新后按以下顺序处理：
 
@@ -90,6 +91,7 @@ node src/cli.cjs status
 
 ```text
 %LOCALAPPDATA%\MirasimRemoteSshPatcher\backups\<Mirasim版本>\app.asar
+%LOCALAPPDATA%\MirasimRemoteSshPatcher\backups\runtime\<runtime版本>\renderer\...
 ```
 
 状态文件保存在 `%LOCALAPPDATA%\MirasimRemoteSshPatcher\state.json`。
@@ -125,4 +127,4 @@ Mirasim 的连接表单不会自动导入整份 `.ssh/config`。请在表单中�
 
 ---
 
-**English summary:** This is an unofficial, reversible Windows Remote SSH patcher for Mirasim Desktop. It enables the Windows SSH host-manager UI and patches the corresponding main-process implementation. It backs up and modifies `resources/app.asar` without modifying `Mirasim.exe`. Use the complete release ZIP, not GitHub's generated source archive. Official Mirasim updates can overwrite the patch; run `status` and then `repair` afterward. Tested versions are listed above; other versions are attempted when their internal structure is compatible. The patcher never reads, copies, or uploads private-key contents.
+**English summary:** This is an unofficial, reversible Windows Remote SSH patcher for Mirasim Desktop. It enables the Windows SSH host-manager UI and patches the corresponding main-process implementation. It backs up and modifies `resources/app.asar` plus the selected downloaded UI runtime without modifying `Mirasim.exe`. Use the complete release ZIP, not GitHub's generated source archive. Official desktop or UI-runtime updates can overwrite the patch; run `status` and then `repair` afterward. Tested versions are listed above; other versions are attempted when their internal structure is compatible. The patcher never reads, copies, or uploads private-key contents.

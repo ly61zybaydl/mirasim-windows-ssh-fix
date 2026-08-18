@@ -3,6 +3,10 @@
 const vm = require("node:vm");
 
 const PATCH_MARKER = "__MIRASIM_WINDOWS_REMOTE_SSH_PATCH_V2__";
+const BRIDGE_PATCH_MARKER = "__mirasimWindowsRemoteSshBridge";
+const BRIDGE_LOG_MARKER = "process['stdout']['write']('[remote-ssh]\\x20not\\x20supported\\x20on\\x20win32";
+const WINDOWS_TUNNEL_OLD_POLICY = "__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=yes'";
+const WINDOWS_TUNNEL_CURRENT_POLICY = "__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=no'";
 const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205"]);
 
 function countOccurrences(source, needle) {
@@ -150,6 +154,37 @@ function patchAskpassWrapper(source) {
   return replaceSegment(source, segment, patched);
 }
 
+function patchRemoteSshBridge(source) {
+  if (source.includes(BRIDGE_PATCH_MARKER)) return source;
+  if (!source.includes(BRIDGE_LOG_MARKER)) return source;
+  const logOffset = uniqueIndex(source, BRIDGE_LOG_MARKER, "Windows Remote SSH bridge startup");
+  const guard = "if(process['platform']==='win32')";
+  const guardOffset = source.lastIndexOf(guard, logOffset);
+  if (guardOffset < 0 || logOffset - guardOffset > 80) {
+    throw new Error("Windows Remote SSH bridge startup: platform guard was not recognized");
+  }
+  return source.slice(0, guardOffset) +
+    `if(false/*${BRIDGE_PATCH_MARKER}*/)` +
+    source.slice(guardOffset + guard.length);
+}
+
+function migrateWindowsTunnelPolicy(source) {
+  if (source.includes(WINDOWS_TUNNEL_CURRENT_POLICY)) return source;
+  return replaceExactlyOnce(
+    source,
+    "Windows tunnel forward-failure policy",
+    WINDOWS_TUNNEL_OLD_POLICY,
+    WINDOWS_TUNNEL_CURRENT_POLICY,
+  );
+}
+
+function isMainPatchCurrent(source) {
+  const bridgeCurrent = !source.includes(BRIDGE_LOG_MARKER) || source.includes(BRIDGE_PATCH_MARKER);
+  return source.includes(PATCH_MARKER) &&
+    bridgeCurrent &&
+    source.includes(WINDOWS_TUNNEL_CURRENT_POLICY);
+}
+
 function patchProbeAskpass(source) {
   if (source.includes("__mirasimProbeAskpassPath")) return source;
   const segment = containingFunction(source, "'mirasim-ssh-'", "Windows probe askpass");
@@ -253,7 +288,7 @@ function patchSshProcessClass(source) {
   if (!forwardParameters) throw new Error("Windows SSH process class: forward method changed");
   const localPort = forwardParameters[1];
   const remoteSocket = forwardParameters[2];
-  const forwardWin = `if(process['platform']==='win32'){let {host:__mirasimTunnelHost,port:__mirasimTunnelPort}=${targetParser}(this['target']),__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=yes','-oServerAliveInterval=15','-oServerAliveCountMax=3',...this['extraArgs'],'-L','127.0.0.1:'+${localPort}+':'+${remoteSocket},...__mirasimTunnelPort!==null?['-p',String(__mirasimTunnelPort)]:[],__mirasimTunnelHost],__mirasimTunnelChild=require('node:child_process')['spawn'](this['sshBin'],__mirasimTunnelArgs,{'env':this['env'],'stdio':['ignore','ignore','pipe']});this['master']=__mirasimTunnelChild,this['exited']=false,this['lastExit']=null,this['masterStderr']='';__mirasimTunnelChild['stderr']?.['on']('data',__mirasimTunnelData=>{let __mirasimTunnelText=__mirasimTunnelData['toString']('utf8');this['masterStderr']+=__mirasimTunnelText,this['log']?.(__mirasimTunnelText['trimEnd']());});await new Promise((__mirasimTunnelResolve,__mirasimTunnelReject)=>{let __mirasimTunnelSettled=false,__mirasimTunnelStarted=Date['now'](),__mirasimTunnelFail=__mirasimTunnelError=>{if(__mirasimTunnelSettled)return;__mirasimTunnelSettled=true,__mirasimTunnelReject(__mirasimTunnelError);},__mirasimTunnelClosed=__mirasimTunnelCode=>{this['exited']=true,this['lastExit']={'code':__mirasimTunnelCode};for(let __mirasimTunnelCallback of this['exitCallbacks']['slice']())__mirasimTunnelCallback({'code':__mirasimTunnelCode});__mirasimTunnelFail(new Error('ssh tunnel exited before becoming ready (code '+__mirasimTunnelCode+')'+this['exitDetail']()));};__mirasimTunnelChild['on']('close',__mirasimTunnelClosed),__mirasimTunnelChild['on']('error',__mirasimTunnelFail);let __mirasimTunnelProbe=()=>{if(__mirasimTunnelSettled)return;let __mirasimTunnelSocket=require('node:net')['connect']({'host':'127.0.0.1','port':${localPort}}),__mirasimTunnelProbeDone=false,__mirasimTunnelFinish=__mirasimTunnelReady=>{if(__mirasimTunnelProbeDone)return;__mirasimTunnelProbeDone=true,__mirasimTunnelSocket['destroy']();if(__mirasimTunnelSettled)return;if(__mirasimTunnelReady){__mirasimTunnelSettled=true,__mirasimTunnelResolve();return;}if(Date['now']()-__mirasimTunnelStarted>=this['checkTimeoutMs']){__mirasimTunnelSettled=true,this['exited']||__mirasimTunnelChild['kill']('SIGKILL'),__mirasimTunnelReject(new Error('ssh tunnel timed out after '+this['checkTimeoutMs']+'ms: '+this['masterStderr']['trim']()));return;}setTimeout(__mirasimTunnelProbe,this['checkIntervalMs']);};__mirasimTunnelSocket['once']('connect',()=>__mirasimTunnelFinish(true)),__mirasimTunnelSocket['once']('error',()=>__mirasimTunnelFinish(false)),__mirasimTunnelSocket['setTimeout'](Math['min'](this['checkIntervalMs'],1000),()=>__mirasimTunnelFinish(false));};setTimeout(__mirasimTunnelProbe,this['checkIntervalMs']);});return;}`;
+  const forwardWin = `if(process['platform']==='win32'){let {host:__mirasimTunnelHost,port:__mirasimTunnelPort}=${targetParser}(this['target']),__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=no','-oServerAliveInterval=15','-oServerAliveCountMax=3',...this['extraArgs'],'-L','127.0.0.1:'+${localPort}+':'+${remoteSocket},...__mirasimTunnelPort!==null?['-p',String(__mirasimTunnelPort)]:[],__mirasimTunnelHost],__mirasimTunnelChild=require('node:child_process')['spawn'](this['sshBin'],__mirasimTunnelArgs,{'env':this['env'],'stdio':['ignore','ignore','pipe']});this['master']=__mirasimTunnelChild,this['exited']=false,this['lastExit']=null,this['masterStderr']='';__mirasimTunnelChild['stderr']?.['on']('data',__mirasimTunnelData=>{let __mirasimTunnelText=__mirasimTunnelData['toString']('utf8');this['masterStderr']+=__mirasimTunnelText,this['log']?.(__mirasimTunnelText['trimEnd']());});await new Promise((__mirasimTunnelResolve,__mirasimTunnelReject)=>{let __mirasimTunnelSettled=false,__mirasimTunnelStarted=Date['now'](),__mirasimTunnelFail=__mirasimTunnelError=>{if(__mirasimTunnelSettled)return;__mirasimTunnelSettled=true,__mirasimTunnelReject(__mirasimTunnelError);},__mirasimTunnelClosed=__mirasimTunnelCode=>{this['exited']=true,this['lastExit']={'code':__mirasimTunnelCode};for(let __mirasimTunnelCallback of this['exitCallbacks']['slice']())__mirasimTunnelCallback({'code':__mirasimTunnelCode});__mirasimTunnelFail(new Error('ssh tunnel exited before becoming ready (code '+__mirasimTunnelCode+')'+this['exitDetail']()));};__mirasimTunnelChild['on']('close',__mirasimTunnelClosed),__mirasimTunnelChild['on']('error',__mirasimTunnelFail);let __mirasimTunnelProbe=()=>{if(__mirasimTunnelSettled)return;let __mirasimTunnelSocket=require('node:net')['connect']({'host':'127.0.0.1','port':${localPort}}),__mirasimTunnelProbeDone=false,__mirasimTunnelFinish=__mirasimTunnelReady=>{if(__mirasimTunnelProbeDone)return;__mirasimTunnelProbeDone=true,__mirasimTunnelSocket['destroy']();if(__mirasimTunnelSettled)return;if(__mirasimTunnelReady){__mirasimTunnelSettled=true,__mirasimTunnelResolve();return;}if(Date['now']()-__mirasimTunnelStarted>=this['checkTimeoutMs']){__mirasimTunnelSettled=true,this['exited']||__mirasimTunnelChild['kill']('SIGKILL'),__mirasimTunnelReject(new Error('ssh tunnel timed out after '+this['checkTimeoutMs']+'ms: '+this['masterStderr']['trim']()));return;}setTimeout(__mirasimTunnelProbe,this['checkIntervalMs']);};__mirasimTunnelSocket['once']('connect',()=>__mirasimTunnelFinish(true)),__mirasimTunnelSocket['once']('error',()=>__mirasimTunnelFinish(false)),__mirasimTunnelSocket['setTimeout'](Math['min'](this['checkIntervalMs'],1000),()=>__mirasimTunnelFinish(false));};setTimeout(__mirasimTunnelProbe,this['checkIntervalMs']);});return;}`;
   source = source.slice(0, forwardOpen + 1) + forwardWin + source.slice(forwardOpen + 1);
 
   const scpOffset = source.indexOf("async['scpTo'](", forwardOffset);
@@ -333,11 +368,14 @@ function verifyPatchedSource(source) {
     "__mirasimTunnelChild",
     "__mirasimLegacyInstalled",
     "['-oClearAllForwardings=yes']",
-    "-oExitOnForwardFailure=yes",
+    WINDOWS_TUNNEL_CURRENT_POLICY,
     "__mirasimMinor<17",
   ];
   for (const marker of required) {
     if (!source.includes(marker)) throw new Error(`Patched source verification failed: ${marker} is missing`);
+  }
+  if (source.includes(BRIDGE_LOG_MARKER) && !source.includes(BRIDGE_PATCH_MARKER)) {
+    throw new Error(`Patched source verification failed: ${BRIDGE_PATCH_MARKER} is missing`);
   }
   if (source.includes("throw new Error('Remote\\x20SSH\\x20workspaces\\x20are\\x20not\\x20supported\\x20on\\x20Windows\\x20yet.')")) {
     throw new Error("Patched source verification failed: Windows platform guard remains");
@@ -347,8 +385,10 @@ function verifyPatchedSource(source) {
 
 function patchMainSource(originalSource, version) {
   if (originalSource.includes(PATCH_MARKER)) {
-    verifyPatchedSource(originalSource);
-    return { source: originalSource, alreadyPatched: true };
+    let migratedSource = patchRemoteSshBridge(originalSource);
+    migratedSource = migrateWindowsTunnelPolicy(migratedSource);
+    verifyPatchedSource(migratedSource);
+    return { source: migratedSource, alreadyPatched: migratedSource === originalSource };
   }
   let source = originalSource;
   source = replaceExactlyOnce(
@@ -369,13 +409,16 @@ function patchMainSource(originalSource, version) {
   source = patchAskpassServer(source);
   source = patchSshProcessClass(source);
   source = patchLegacyRuntime(source);
+  source = patchRemoteSshBridge(source);
   verifyPatchedSource(source);
   return { source, alreadyPatched: false };
 }
 
 module.exports = {
+  BRIDGE_PATCH_MARKER,
   PATCH_MARKER,
   TESTED_VERSIONS,
+  isMainPatchCurrent,
   patchMainSource,
   verifyPatchedSource,
 };
