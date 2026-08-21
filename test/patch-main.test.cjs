@@ -37,7 +37,7 @@ function replaceNativePlainTunnelPolicy(source, policy) {
 }
 
 test("the versions exercised by fixtures are listed", () => {
-  assert.deepEqual([...TESTED_VERSIONS].sort(), ["0.0.170", "0.0.203", "0.0.205", "0.0.208"]);
+  assert.deepEqual([...TESTED_VERSIONS].sort(), ["0.0.170", "0.0.203", "0.0.205", "0.0.208", "0.0.214"]);
 });
 
 test("patched-source verification fails closed for a public synthetic snippet", () => {
@@ -101,6 +101,7 @@ for (const [version, environmentName] of [
   ["0.0.203", "MIRASIM_FIXTURE_0203_MAIN"],
   ["0.0.205", "MIRASIM_FIXTURE_0205_ASAR"],
   ["0.0.208", "MIRASIM_FIXTURE_0208_ASAR"],
+  ["0.0.214", "MIRASIM_FIXTURE_0214_ASAR"],
 ]) {
   const fixturePath = process.env[environmentName];
   test(`optional local ${version} main bundle patches and is idempotent`, {
@@ -157,7 +158,7 @@ for (const [version, environmentName] of [
     assert.equal(hookRepaired.source, first.source);
 
     if (nativeWindows) {
-      assert.equal(version, "0.0.208");
+      assert.equal(["0.0.208", "0.0.214"].includes(version), true);
       assert.equal(nativePlainTunnelMatch(original)[3], "yes");
       assert.equal(nativePlainTunnelMatch(first.source)[3], "no");
       assert.equal(

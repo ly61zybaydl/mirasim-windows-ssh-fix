@@ -14,7 +14,7 @@ const NATIVE_WINDOWS_ASKPASS_WRAPPER = /return\s+[\w$]+==='win32'\?'ssh-askpass-
 const NATIVE_WINDOWS_PROBE_ASKPASS = /'askpass\.(?:bat|cmd)'/;
 const NATIVE_WINDOWS_SSH_ADD_ASKPASS = /'ssh-add-askpass\.(?:bat|cmd)'/;
 const NATIVE_WINDOWS_PLAIN_TUNNEL = /\['forward'\]\(([\w$]+),([\w$]+)\)\{let\s+[\w$]+=\['-N','-L','127\.0\.0\.1:'\+\1\+':'\+\2,'-oExitOnForwardFailure=(yes|no)'/;
-const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205", "0.0.208"]);
+const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205", "0.0.208", "0.0.214"]);
 
 function countOccurrences(source, needle) {
   if (!needle) return 0;
