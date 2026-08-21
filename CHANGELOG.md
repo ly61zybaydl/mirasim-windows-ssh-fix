@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- Verify Mirasim Desktop 0.0.214 together with downloaded UI runtime 0.0.216; capability detection applies without code changes, and 0.0.214 is now listed as tested.
+- Confirm the desktop shell main process still hosts Remote SSH and its tunnel in the 0.0.214 + downloaded-runtime architecture, so the tunnel-policy fix keeps applying after official updates.
+
 ## 0.1.3
 
 - Support Mirasim Desktop 0.0.208 and its native Windows Remote SSH transport.
