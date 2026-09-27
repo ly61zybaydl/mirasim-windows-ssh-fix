@@ -114,6 +114,7 @@ for (const [version, environmentName, expectedLocked] of [
   ["0.0.207", "MIRASIM_FIXTURE_0207_RENDERER", true],
   ["0.0.208", "MIRASIM_FIXTURE_0208_ASAR", false],
   ["0.0.214", "MIRASIM_FIXTURE_0214_ASAR", false],
+  ["0.0.348", "MIRASIM_FIXTURE_0348_ASAR", false],
 ]) {
   const fixturePath = process.env[environmentName];
   test(`optional local ${version} renderer has the expected Windows gate`, {

@@ -1,16 +1,16 @@
 Legacy Linux compatibility runtime
 ==================================
 
-Node.js v22.23.1 linux-x64-glibc-217
+Node.js v24.19.0 linux-x64-glibc-217
 Source: https://github.com/nodejs/unofficial-builds
-Archive: node-v22.23.1-linux-x64-glibc-217.tar.xz
+Archive: node-v24.19.0-linux-x64-glibc-217.tar.xz
 
 The Node.js license and third-party notices are included inside that unmodified
 distribution archive.
 
 node-pty 1.2.0-beta.14
 Source: https://github.com/microsoft/node-pty
-Binary: pty-node-v127-glibc217.node
+Binary: pty-node-napi-glibc217.node (N-API build, loads in Node.js 18 and newer)
 
 MIT License
 

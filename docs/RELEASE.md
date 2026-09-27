@@ -31,12 +31,13 @@ npm run package:win
 
 Local packaging also needs these Linux compatibility files in `assets/linux-compat`:
 
-- `node-v22.23.1-linux-x64-glibc-217.tar.xz`
-- `pty-node-v127-glibc217.node`
+- `node-v24.19.0-linux-x64-glibc-217.tar.xz` (the `runtime` named in `assets/linux-compat/manifest.json`)
+- `pty-node-napi-glibc217.node`
 - `install-legacy-runtime.sh`
+- `legacy-runtime-fix.sh`
 - `THIRD_PARTY_NOTICES.txt`
 
-The release workflow downloads the Linux Node.js archive and builds the `node-pty` binary automatically on Ubuntu 18.04.
+The release workflow downloads the Linux Node.js archive named by the manifest and builds the N-API `node-pty` binary automatically on Ubuntu 18.04 (against the Node.js 22 headers, which compile with that distribution's gcc; the addon loads in Node.js 22 and 24 alike).
 
 The resulting file is:
 

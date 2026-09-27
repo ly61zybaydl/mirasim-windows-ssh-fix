@@ -3,13 +3,16 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const test = require("node:test");
+const vm = require("node:vm");
 const asar = require("@electron/asar");
 const {
   BRIDGE_PATCH_MARKER,
+  LEGACY_HELPER_MARKER,
   PATCH_MARKER,
   TESTED_VERSIONS,
   hasNativeWindowsRemoteSsh,
   isMainPatchCurrent,
+  patchLegacyRuntime,
   patchMainSource,
   verifyPatchedSource,
 } = require("../src/patch-main.cjs");
@@ -37,7 +40,7 @@ function replaceNativePlainTunnelPolicy(source, policy) {
 }
 
 test("the versions exercised by fixtures are listed", () => {
-  assert.deepEqual([...TESTED_VERSIONS].sort(), ["0.0.170", "0.0.203", "0.0.205", "0.0.208", "0.0.214"]);
+  assert.deepEqual([...TESTED_VERSIONS].sort(), ["0.0.170", "0.0.203", "0.0.205", "0.0.208", "0.0.214", "0.0.348"]);
 });
 
 test("patched-source verification fails closed for a public synthetic snippet", () => {
@@ -63,7 +66,7 @@ test("a synthetic source fails because required semantic anchors are absent", ()
 });
 
 test("main patch status rejects the previous Windows tunnel policy", () => {
-  const runtimePatch = `${PATCH_MARKER} async function __mirasimEnsureLegacyLinuxRuntime(){} let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(x); __mirasimMinor<17 `;
+  const runtimePatch = `${PATCH_MARKER} ${LEGACY_HELPER_MARKER} async function __mirasimEnsureLegacyLinuxRuntime(){} let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(x); __mirasimMinor<17 `;
   const prefix = `${runtimePatch} ${BRIDGE_PATCH_MARKER} `;
   const current = `${prefix}__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=no'`;
   const previous = `${prefix}__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=yes'`;
@@ -78,6 +81,7 @@ test("main patch status rejects the previous Windows tunnel policy", () => {
 test("native Windows SSH status requires the legacy runtime patch and current plain tunnel policy", () => {
   const nativeSource = String.raw`
     ${PATCH_MARKER}
+    ${LEGACY_HELPER_MARKER}
     async function __mirasimEnsureLegacyLinuxRuntime(){}
     let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(master);
     __mirasimMinor<17;
@@ -102,6 +106,7 @@ for (const [version, environmentName] of [
   ["0.0.205", "MIRASIM_FIXTURE_0205_ASAR"],
   ["0.0.208", "MIRASIM_FIXTURE_0208_ASAR"],
   ["0.0.214", "MIRASIM_FIXTURE_0214_ASAR"],
+  ["0.0.348", "MIRASIM_FIXTURE_0348_ASAR"],
 ]) {
   const fixturePath = process.env[environmentName];
   test(`optional local ${version} main bundle patches and is idempotent`, {
@@ -158,7 +163,7 @@ for (const [version, environmentName] of [
     assert.equal(hookRepaired.source, first.source);
 
     if (nativeWindows) {
-      assert.equal(["0.0.208", "0.0.214"].includes(version), true);
+      assert.equal(["0.0.208", "0.0.214", "0.0.348"].includes(version), true);
       assert.equal(nativePlainTunnelMatch(original)[3], "yes");
       assert.equal(nativePlainTunnelMatch(first.source)[3], "no");
       assert.equal(
@@ -188,3 +193,42 @@ for (const [version, environmentName] of [
     }
   });
 }
+
+const SYNTHETIC_DIRECTIVE = "'use\\x20strict';";
+
+test("the launch hook is inserted for both connect-flow shapes", () => {
+  const classFlow = `${SYNTHETIC_DIRECTIVE}class C{async run(){this['setStatus'](host,conn,{'phase':'connecting','step':'launching'});let env={},{socketPath:s}=await launch(master,env);return s;}}`;
+  const patchedClassFlow = patchLegacyRuntime(classFlow);
+  assert.equal(patchedClassFlow.includes(LEGACY_HELPER_MARKER), true);
+  assert.equal(patchedClassFlow.includes(
+    "let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(master);__mirasimLegacyInstalled&&this['opts']['log']?.('[remote-ssh] '+host+': installed the glibc compatibility runtime');let env={}",
+  ), true);
+  assert.equal(patchLegacyRuntime(patchedClassFlow), patchedClassFlow);
+
+  const contextFlow = `${SYNTHETIC_DIRECTIVE}async function connect(ctx){ctx['setStatus']({'phase':'connecting','step':'launching'});let {socketPath:s}=await launch(master,ctx['launchEnv']);return s;}`;
+  const patchedContextFlow = patchLegacyRuntime(contextFlow);
+  assert.equal(patchedContextFlow.includes(
+    "let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(master);__mirasimLegacyInstalled&&ctx['log']?.('installed the glibc compatibility runtime');let {socketPath:s}",
+  ), true);
+  assert.equal(patchLegacyRuntime(patchedContextFlow), patchedContextFlow);
+  new vm.Script(patchedContextFlow);
+
+  assert.throws(() => patchLegacyRuntime(`${SYNTHETIC_DIRECTIVE}nothing here`), /expected one launch transition, found 0/);
+});
+
+test("an installed 0.1.x helper is replaced by the current helper and keeps its hook", () => {
+  const previousHelper = "\nconst __MIRASIM_WINDOWS_REMOTE_SSH_PATCH_V2__='0.1.0';\nasync function __mirasimEnsureLegacyLinuxRuntime(__mirasimMaster){\n  if(__mirasimMinor<17)return {};\n  return false;\n}\n";
+  const previous = `${SYNTHETIC_DIRECTIVE}${previousHelper}async function connect(ctx){ctx['setStatus']({'phase':'connecting','step':'launching'});let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(master);__mirasimLegacyInstalled&&ctx['log']?.('installed the glibc compatibility runtime');let {socketPath:s}=await launch(master,ctx['launchEnv']);return s;}`;
+  assert.equal(previous.includes(PATCH_MARKER), true);
+  assert.equal(previous.includes(LEGACY_HELPER_MARKER), false);
+  const migrated = patchLegacyRuntime(previous);
+  assert.equal(migrated.includes("'0.1.0'"), false);
+  assert.equal(migrated.includes(LEGACY_HELPER_MARKER), true);
+  assert.equal(migrated.split("async function __mirasimEnsureLegacyLinuxRuntime(").length, 2);
+  assert.equal(migrated.split("let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(master)").length, 2);
+  assert.equal(migrated.includes("node-v24.19.0-linux-x64-glibc-217.tar.xz"), true);
+  assert.equal(migrated.includes("pty-node-napi-glibc217.node"), true);
+  assert.equal(migrated.includes("legacy-runtime-fix.sh"), true);
+  assert.equal(patchLegacyRuntime(migrated), migrated);
+  new vm.Script(migrated);
+});

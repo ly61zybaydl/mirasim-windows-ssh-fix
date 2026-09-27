@@ -24,23 +24,16 @@ const TOOL_VERSION = require("../package.json").version;
 const TOOL_ROOT = path.resolve(__dirname, "..");
 const ASSET_SOURCE = path.join(TOOL_ROOT, "assets", "linux-compat");
 const WINDOWS_ASKPASS_SOURCE = path.join(TOOL_ROOT, "assets", "windows-askpass");
+const LINUX_COMPAT_MANIFEST = require("../assets/linux-compat/manifest.json");
+// Every release asset listed by the Linux compat manifest is copied beside app.asar; the
+// injected main-process helper uploads them to a remote whose glibc is older than 2.28.
 const ASSET_FILES = [
-  {
-    source: path.join(ASSET_SOURCE, "node-v22.23.1-linux-x64-glibc-217.tar.xz"),
-    relative: path.join("linux-compat", "node-v22.23.1-linux-x64-glibc-217.tar.xz"),
-  },
-  {
-    source: path.join(ASSET_SOURCE, "pty-node-v127-glibc217.node"),
-    relative: path.join("linux-compat", "pty-node-v127-glibc217.node"),
-  },
-  {
-    source: path.join(ASSET_SOURCE, "install-legacy-runtime.sh"),
-    relative: path.join("linux-compat", "install-legacy-runtime.sh"),
-  },
-  {
-    source: path.join(ASSET_SOURCE, "THIRD_PARTY_NOTICES.txt"),
-    relative: path.join("linux-compat", "THIRD_PARTY_NOTICES.txt"),
-  },
+  ...Object.entries(LINUX_COMPAT_MANIFEST.files)
+    .filter(([, entry]) => entry && entry.releaseAsset === true)
+    .map(([name]) => ({
+      source: path.join(ASSET_SOURCE, name),
+      relative: path.join("linux-compat", name),
+    })),
   {
     source: path.join(WINDOWS_ASKPASS_SOURCE, "windows-askpass.exe"),
     relative: "windows-askpass.exe",

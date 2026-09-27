@@ -20,6 +20,14 @@ jobs:
         run: |
           set -euo pipefail
           cd assets/linux-compat
+          # Shipped runtime: the Node.js major that current Mirasim remote payloads use.
+          runtime="$(node -p "require('./manifest.json').runtime")"
+          node_version="$(node -p "require('./manifest.json').nodeVersion")"
+          curl --fail --location --retry 3 \
+            --output "$runtime.tar.xz" \
+            "https://unofficial-builds.nodejs.org/download/release/$node_version/$runtime.tar.xz"
+          # Build-only toolchain for the N-API node-pty binary (its headers compile with the
+          # gcc 7 that ships in Ubuntu 18.04; the resulting addon loads in any Node.js 18+).
           curl --fail --location --retry 3 \
             --output node-v22.23.1-linux-x64-glibc-217.tar.xz \
             https://unofficial-builds.nodejs.org/download/release/v22.23.1/node-v22.23.1-linux-x64-glibc-217.tar.xz
@@ -48,15 +56,22 @@ jobs:
               cp /inputs/node-pty-1.2.0-beta.14.tgz "$build/"
               cp /inputs/node-addon-api-7.1.0.tgz "$build/"
               sh /inputs/build-node-pty.sh
-              cp "$build/pty.node" /inputs/pty-node-v127-glibc217.node
+              cp "$build/pty.node" /inputs/pty-node-napi-glibc217.node
             '
+      - name: Keep only the shipped Linux assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd assets/linux-compat
+          rm -f node-v22.23.1-linux-x64-glibc-217.tar.xz node-pty-1.2.0-beta.14.tgz node-addon-api-7.1.0.tgz
+          node ../../scripts/verify-release-assets.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: legacy-linux-assets
           if-no-files-found: error
           path: |
-            assets/linux-compat/node-v22.23.1-linux-x64-glibc-217.tar.xz
-            assets/linux-compat/pty-node-v127-glibc217.node
+            assets/linux-compat/node-v*-linux-x64-glibc-217.tar.xz
+            assets/linux-compat/pty-node-napi-glibc217.node
 
   package:
     needs: legacy-assets

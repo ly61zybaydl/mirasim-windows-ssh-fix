@@ -1,20 +1,27 @@
 {
   "schemaVersion": 1,
-  "runtime": "node-v22.23.1-linux-x64-glibc-217",
-  "nodeAbi": 127,
+  "runtime": "node-v24.19.0-linux-x64-glibc-217",
+  "nodeVersion": "v24.19.0",
+  "nodePty": {
+    "version": "1.2.0-beta.14",
+    "binding": "napi"
+  },
   "verifiedRemote": "Ubuntu 18.04 x64 / glibc 2.27",
   "files": {
-    "node-v22.23.1-linux-x64-glibc-217.tar.xz": {
+    "node-v24.19.0-linux-x64-glibc-217.tar.xz": {
       "releaseAsset": true,
-      "source": "https://unofficial-builds.nodejs.org/download/release/v22.23.1/node-v22.23.1-linux-x64-glibc-217.tar.xz"
+      "source": "https://unofficial-builds.nodejs.org/download/release/v24.19.0/node-v24.19.0-linux-x64-glibc-217.tar.xz"
     },
-    "pty-node-v127-glibc217.node": {
+    "pty-node-napi-glibc217.node": {
       "releaseAsset": true,
-      "source": "built from node-pty 1.2.0-beta.14 on Ubuntu 18.04",
+      "source": "built from node-pty 1.2.0-beta.14 on Ubuntu 18.04 (N-API, loads in any Node.js 18+)",
       "sourceArchive": "https://registry.npmjs.org/node-pty/-/node-pty-1.2.0-beta.14.tgz",
       "nodeAddonApiArchive": "https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.0.tgz"
     },
     "install-legacy-runtime.sh": {
+      "releaseAsset": true
+    },
+    "legacy-runtime-fix.sh": {
       "releaseAsset": true
     },
     "THIRD_PARTY_NOTICES.txt": {

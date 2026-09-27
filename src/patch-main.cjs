@@ -1,8 +1,16 @@
 "use strict";
 
 const vm = require("node:vm");
+const compatManifest = require("../assets/linux-compat/manifest.json");
 
 const PATCH_MARKER = "__MIRASIM_WINDOWS_REMOTE_SSH_PATCH_V2__";
+const LEGACY_HELPER_MARKER = "__mirasimLegacyRuntimeHelperV3";
+const LEGACY_RUNTIME_NAME = compatManifest.runtime;
+const LEGACY_NODE_VERSION = compatManifest.nodeVersion;
+const LEGACY_RUNTIME_ARCHIVE = `${LEGACY_RUNTIME_NAME}.tar.xz`;
+const LEGACY_PTY_BINARY = "pty-node-napi-glibc217.node";
+const LEGACY_FIX_SCRIPT = "legacy-runtime-fix.sh";
+const LEGACY_INSTALL_SCRIPT = "install-legacy-runtime.sh";
 const BRIDGE_PATCH_MARKER = "__mirasimWindowsRemoteSshBridge";
 const BRIDGE_LOG_MARKER = "process['stdout']['write']('[remote-ssh]\\x20not\\x20supported\\x20on\\x20win32";
 const WINDOWS_TUNNEL_OLD_POLICY = "__mirasimTunnelArgs=['-N','-oClearAllForwardings=no','-oExitOnForwardFailure=yes'";
@@ -14,7 +22,7 @@ const NATIVE_WINDOWS_ASKPASS_WRAPPER = /return\s+[\w$]+==='win32'\?'ssh-askpass-
 const NATIVE_WINDOWS_PROBE_ASKPASS = /'askpass\.(?:bat|cmd)'/;
 const NATIVE_WINDOWS_SSH_ADD_ASKPASS = /'ssh-add-askpass\.(?:bat|cmd)'/;
 const NATIVE_WINDOWS_PLAIN_TUNNEL = /\['forward'\]\(([\w$]+),([\w$]+)\)\{let\s+[\w$]+=\['-N','-L','127\.0\.0\.1:'\+\1\+':'\+\2,'-oExitOnForwardFailure=(yes|no)'/;
-const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205", "0.0.208", "0.0.214"]);
+const TESTED_VERSIONS = new Set(["0.0.170", "0.0.203", "0.0.205", "0.0.208", "0.0.214", "0.0.348"]);
 
 function countOccurrences(source, needle) {
   if (!needle) return 0;
@@ -221,6 +229,7 @@ function hasNativeWindowsRemoteSsh(source) {
 
 function hasLegacyRuntimePatch(source) {
   return source.includes(PATCH_MARKER) &&
+    source.includes(LEGACY_HELPER_MARKER) &&
     source.includes("async function __mirasimEnsureLegacyLinuxRuntime") &&
     source.includes("let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(") &&
     source.includes("__mirasimMinor<17");
@@ -362,12 +371,12 @@ function patchSshProcessClass(source) {
 }
 
 const LEGACY_RUNTIME_HELPER = String.raw`
-const __MIRASIM_WINDOWS_REMOTE_SSH_PATCH_V2__='0.1.0';
+const __MIRASIM_WINDOWS_REMOTE_SSH_PATCH_V2__='0.2.0',${LEGACY_HELPER_MARKER}=true;
 async function __mirasimEnsureLegacyLinuxRuntime(__mirasimMaster){
   if(process['platform']!=='win32')return false;
   let __mirasimNodeCheck=await __mirasimMaster['exec']("sh -c '~/.mirasim-remote/current/node --version >/dev/null 2>&1'");
   if(__mirasimNodeCheck['code']===0)return false;
-  let __mirasimProbe=await __mirasimMaster['exec']("sh -c 'uname -s; uname -m; getconf GNU_LIBC_VERSION 2>/dev/null || true'"),
+  let __mirasimProbe=await __mirasimMaster['exec']("sh -c 'uname -s; uname -m; getconf GNU_LIBC_VERSION 2>/dev/null || true; cat ~/.mirasim-remote/compat/VERSION 2>/dev/null || echo -'"),
       __mirasimLines=(__mirasimProbe['stdout']||'')['replace'](/\r\n/g,'\n')['trim']()['split']('\n'),
       __mirasimGlibc=/glibc\s+(\d+)\.(\d+)/i['exec'](__mirasimLines[2]||'');
   if((__mirasimLines[0]||'')['trim']()!=='Linux'||(__mirasimLines[1]||'')['trim']()!=='x86_64'||!__mirasimGlibc)return false;
@@ -376,16 +385,38 @@ async function __mirasimEnsureLegacyLinuxRuntime(__mirasimMaster){
   if(__mirasimMinor<17)throw new Error('legacy Linux runtime requires glibc 2.17 or newer; detected glibc '+__mirasimMajor+'.'+__mirasimMinor);
   let __mirasimPath=require('node:path'),__mirasimFs=require('node:fs'),
       __mirasimAssets=__mirasimPath['join'](process['resourcesPath'],'mirasim-ssh-fix','linux-compat'),
-      __mirasimFiles=['node-v22.23.1-linux-x64-glibc-217.tar.xz','pty-node-v127-glibc217.node','install-legacy-runtime.sh'];
-  for(let __mirasimFile of __mirasimFiles){let __mirasimLocal=__mirasimPath['join'](__mirasimAssets,__mirasimFile);if(!__mirasimFs['existsSync'](__mirasimLocal))throw new Error('missing packaged legacy Linux runtime asset: '+__mirasimLocal);}
+      __mirasimFiles=['${LEGACY_PTY_BINARY}','${LEGACY_FIX_SCRIPT}','${LEGACY_INSTALL_SCRIPT}'];
+  (__mirasimLines[3]||'')['trim']()==='${LEGACY_RUNTIME_NAME}'||__mirasimFiles['unshift']('${LEGACY_RUNTIME_ARCHIVE}');
+  for(let __mirasimFile of __mirasimFiles){let __mirasimLocal=__mirasimPath['join'](__mirasimAssets,__mirasimFile);if(!__mirasimFs['existsSync'](__mirasimLocal))throw new Error('missing packaged legacy Linux runtime asset: '+__mirasimLocal+' (run mirasim-ssh-fix repair)');}
   let __mirasimPrepare=await __mirasimMaster['exec']('mkdir -p ~/.mirasim-remote/tmp && chmod 700 ~/.mirasim-remote/tmp');
   if(__mirasimPrepare['code']!==0)throw new Error('failed to prepare the legacy Linux runtime directory: '+(__mirasimPrepare['stderr']||__mirasimPrepare['stdout']||'')['trim']());
   for(let __mirasimFile of __mirasimFiles)await __mirasimMaster['scpTo'](__mirasimPath['join'](__mirasimAssets,__mirasimFile),'~/.mirasim-remote/tmp/'+__mirasimFile);
-  let __mirasimInstall=await __mirasimMaster['exec']('sh ~/.mirasim-remote/tmp/install-legacy-runtime.sh');
+  let __mirasimInstall=await __mirasimMaster['exec']('sh ~/.mirasim-remote/tmp/${LEGACY_INSTALL_SCRIPT}');
   if(__mirasimInstall['code']!==0)throw new Error('legacy Linux runtime install failed (exit '+__mirasimInstall['code']+'): '+(__mirasimInstall['stderr']||__mirasimInstall['stdout']||'')['trim']());
   return true;
 }
 `;
+
+// The moment right before the remote server is launched, in every Remote SSH flow seen so
+// far: 0.0.170-0.0.214 call this['setStatus'](host, connection, {...launching}) inside the
+// connection class, 0.0.348+ call ctx['setStatus']({...launching}) from a standalone
+// connect() with its own ctx.log. The first `await <launch>(<master>, ...)` after it names
+// the SSH master whose exec/scpTo the helper uses.
+const LAUNCH_TRANSITION = /(this|[\w$]+)\['setStatus'\]\((?:([\w$]+),([\w$]+),)?\{'phase':'connecting','step':'launching'\}\);let /g;
+
+function replaceLegacyRuntimeHelper(source) {
+  const start = source.indexOf(`const ${PATCH_MARKER}=`);
+  if (start < 0) throw new Error("Legacy Linux runtime: existing helper was not found");
+  const functionOffset = source.indexOf("async function __mirasimEnsureLegacyLinuxRuntime(", start);
+  if (functionOffset < 0 || functionOffset - start > 400) {
+    throw new Error("Legacy Linux runtime: existing helper was not recognized");
+  }
+  const open = source.indexOf("{", functionOffset);
+  const close = findMatchingBrace(source, open);
+  const blockStart = source[start - 1] === "\n" ? start - 1 : start;
+  const blockEnd = source[close + 1] === "\n" ? close + 2 : close + 1;
+  return source.slice(0, blockStart) + LEGACY_RUNTIME_HELPER + source.slice(blockEnd);
+}
 
 function patchLegacyRuntime(source) {
   if (!source.includes(PATCH_MARKER)) {
@@ -393,23 +424,29 @@ function patchLegacyRuntime(source) {
     const offset = source.indexOf(directive);
     if (offset < 0 || offset > 100) throw new Error("Legacy Linux runtime: main bundle directive changed");
     source = source.slice(0, offset + directive.length) + LEGACY_RUNTIME_HELPER + source.slice(offset + directive.length);
+  } else if (!source.includes(LEGACY_HELPER_MARKER)) {
+    source = replaceLegacyRuntimeHelper(source);
   }
   if (source.includes("__mirasimLegacyInstalled")) return source;
-  const launching = /this\['setStatus'\]\(([\w$]+),([\w$]+),\{'phase':'connecting','step':'launching'\}\);let /g;
-  const matches = [...source.matchAll(launching)];
+  const matches = [...source.matchAll(LAUNCH_TRANSITION)];
   if (matches.length !== 1) throw new Error(`Legacy Linux runtime: expected one launch transition, found ${matches.length}`);
   const match = matches[0];
   const lookAhead = source.slice(match.index + match[0].length, match.index + match[0].length + 1200);
   const masterMatch = lookAhead.match(/=await\s+[\w$]+\(([\w$]+),/);
   if (!masterMatch) throw new Error("Legacy Linux runtime: SSH master variable was not recognized");
+  const [, context, hostVariable] = match;
+  const logCall = context === "this" && hostVariable
+    ? `this['opts']['log']?.('[remote-ssh] '+${hostVariable}+': installed the glibc compatibility runtime')`
+    : `${context}['log']?.('installed the glibc compatibility runtime')`;
   const replacement = match[0].slice(0, -4) +
-    `let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(${masterMatch[1]});__mirasimLegacyInstalled&&this['opts']['log']?.('[remote-ssh] '+${match[1]}+': installed the glibc compatibility runtime');let `;
+    `let __mirasimLegacyInstalled=await __mirasimEnsureLegacyLinuxRuntime(${masterMatch[1]});__mirasimLegacyInstalled&&${logCall};let `;
   return source.slice(0, match.index) + replacement + source.slice(match.index + match[0].length);
 }
 
 function verifyPatchedSource(source) {
   const required = [
     PATCH_MARKER,
+    LEGACY_HELPER_MARKER,
     "async function __mirasimEnsureLegacyLinuxRuntime",
     "__mirasimLegacyInstalled",
     "__mirasimMinor<17",
@@ -480,10 +517,12 @@ function patchMainSource(originalSource, version) {
 
 module.exports = {
   BRIDGE_PATCH_MARKER,
+  LEGACY_HELPER_MARKER,
   PATCH_MARKER,
   TESTED_VERSIONS,
   hasNativeWindowsRemoteSsh,
   isMainPatchCurrent,
+  patchLegacyRuntime,
   patchMainSource,
   verifyPatchedSource,
 };

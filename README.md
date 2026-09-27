@@ -12,16 +12,16 @@
 | 项目 | 支持情况 |
 | --- | --- |
 | 本机系统 | Windows 10/11 x64 |
-| Mirasim Desktop | `0.0.170`、`0.0.203`、`0.0.205`、`0.0.208`、`0.0.214` |
-| Mirasim 下载式 UI runtime | `0.0.207`、`0.0.216` |
-| 远端系统 | Linux x86_64；旧版兼容运行时已在 Ubuntu 18.04 x64 / glibc 2.27 验证 |
+| Mirasim Desktop | `0.0.170`、`0.0.203`、`0.0.205`、`0.0.208`、`0.0.214`、`0.0.348` |
+| Mirasim 下载式 UI runtime | `0.0.207`、`0.0.216`、`0.0.372` |
+| 远端系统 | Linux x86_64；旧版兼容运行时（Node.js v24.19.0 glibc-2.17 构建）已在 Ubuntu 18.04 x64 / glibc 2.27 验证 |
 | SSH 客户端 | Windows OpenSSH (`ssh.exe` / `scp.exe`) |
 
 表中版本已经实际测试。工具不按固定版本号选择补丁路径，而是检测 Windows SSH 能力和远端启动流程；后续版本只要保留兼容的语义结构，也会自动尝试应用。若内部流程、Node API 或 `node-pty` 布局发生不兼容变化，工具会报告具体错误，无法保证永久兼容所有未知版本。
 
 ## 它解决什么
 
-较旧 Mirasim Desktop 的 Windows 构建会通过前端入口、Electron IPC bridge 和若干只适用于 Unix 的主进程实现阻止 Remote SSH；工具会补齐这些能力。`0.0.208`–`0.0.214` 及类似的新架构已原生支持 Windows SSH，工具只修复其隧道策略并为旧 glibc 的 Linux x86_64 主机安装兼容运行时。旧版使用的 Windows askpass 是仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
+较旧 Mirasim Desktop 的 Windows 构建会通过前端入口、Electron IPC bridge 和若干只适用于 Unix 的主进程实现阻止 Remote SSH；工具会补齐这些能力。`0.0.208`–`0.0.348` 及类似的新架构已原生支持 Windows SSH，工具只修复其隧道策略并为旧 glibc 的 Linux x86_64 主机安装兼容运行时。旧版使用的 Windows askpass 是仓库内源码编译的小型原生启动器，不经过 `cmd.exe`，因此提示文本中的引号、百分号、感叹号等字符不会被 shell 二次解释。
 
 补丁过程会先备份原始 `app.asar` 和当前下载式 UI runtime 中需要修改的前端文件，然后应用修改并安装辅助资源。`restore` 可用来恢复工具创建的备份。
 
@@ -52,6 +52,8 @@ Mirasim-SSH-Fix.cmd restore
 如果 Mirasim 已更新到 `0.0.208`，或已经使用过 `v0.1.2`，请使用 `v0.1.3` 或更高版本运行 `repair`。官方更新会覆盖 `app.asar` 和辅助资源；`v0.1.3` 会识别新版原生 Windows SSH 架构，修复其隧道参数，并在 Ubuntu 18.04 / glibc 2.27 等旧系统上为新交付的远端版本重新安装兼容 Node 与 `node-pty`。
 
 官方自动更新（例如更新到 `0.0.214`）会再次覆盖补丁：完整退出 Mirasim 后运行一次 `repair` 即可重新应用。`v0.1.4` 已实测 `0.0.214` 桌面版与下载式 UI runtime `0.0.216` 的组合。
+
+`v0.2.0` 适配 `0.0.348` 桌面版（远端 payload `0.0.372`，其自带 Node.js 已升级到 v24，需要 glibc 2.28），并把旧 glibc 兼容做成**远端自愈**：首次连接旧系统时，工具会把 glibc-2.17 构建的 Node.js v24 和 N-API 版 `node-pty` 存到远端 `~/.mirasim-remote/compat/`，并在远端 `~/.ssh/rc` 里加一段带标记的钩子。此后 sshd 会在每个 SSH 会话开始前运行 `compat/fix.sh`：它只在 Mirasim 刚投送了新版本、且新 `node` 在这台机器上跑不起来时才把兼容 Node 换进去，其余时间几毫秒就返回。这样即使之后 Mirasim 桌面端再次自动更新、把本机补丁覆盖掉，旧系统上的远端也能继续启动；本机只需要在需要隧道策略修复时再跑一次 `repair`。要撤销远端改动，删除 `~/.ssh/rc` 中标记块和 `~/.mirasim-remote/compat` 即可。
 
 如果 Mirasim 安装在非默认位置：
 
@@ -85,6 +87,8 @@ node src/cli.cjs status
 ## 软件更新会覆盖补丁吗？
 
 **会。** Mirasim 的 Windows 安装器更新通常会重装应用目录；Mirasim 还会单独下载新的 UI runtime。因此 `resources/app.asar`、当前 runtime 前端和本工具安装的兼容资源都可能被替换。补丁工具及其外部备份通常仍保留。
+
+远端不受影响：`v0.2.0` 起旧 glibc 主机上的兼容运行时和 `~/.ssh/rc` 钩子保存在远端用户目录，不随本机 Mirasim 更新丢失；新投送的远端版本会在启动前被自动换成兼容 Node.js。本机需要重新 `repair` 的只剩隧道策略（`.ssh/config` 里无关 `RemoteForward` 失败时不断线）。
 
 更新后按以下顺序处理：
 
