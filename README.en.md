@@ -12,16 +12,16 @@ An unofficial compatibility patcher that enables Mirasim Remote SSH on Windows. 
 | Component | Tested support |
 | --- | --- |
 | Local operating system | Windows 10/11 x64 |
-| Mirasim Desktop | `0.0.170`, `0.0.203`, `0.0.205`, `0.0.208`, `0.0.214` |
-| Downloaded Mirasim UI runtime | `0.0.207`, `0.0.216` |
-| Remote operating system | Linux x86_64; the legacy runtime was verified on Ubuntu 18.04 x64 / glibc 2.27 |
+| Mirasim Desktop | `0.0.170`, `0.0.203`, `0.0.205`, `0.0.208`, `0.0.214`, `0.0.348` |
+| Downloaded Mirasim UI runtime | `0.0.207`, `0.0.216`, `0.0.372` |
+| Remote operating system | Linux x86_64; the legacy runtime (Node.js v24.19.0 glibc-2.17 build) was verified on Ubuntu 18.04 x64 / glibc 2.27 |
 | SSH client | Windows OpenSSH (`ssh.exe` / `scp.exe`) |
 
 The versions above have been tested directly. The patcher selects its path by detecting Windows SSH capabilities and the remote launch workflow, not by requiring an exact version number. It also attempts later releases that retain compatible semantic structures. If the internal workflow, required Node APIs, or `node-pty` layout changes incompatibly, the tool reports the unmatched part; permanent compatibility with every unknown future version cannot be guaranteed.
 
 ## What it fixes
 
-Older Windows builds of Mirasim Desktop block Remote SSH through the frontend entry point, Electron IPC bridge, and several main-process implementations that assume a Unix environment. The tool supplies those missing capabilities. Versions `0.0.208`–`0.0.214` and similar newer architectures already provide native Windows SSH, so the tool patches only their tunnel policy and installs a compatibility runtime for older glibc-based Linux x86_64 hosts.
+Older Windows builds of Mirasim Desktop block Remote SSH through the frontend entry point, Electron IPC bridge, and several main-process implementations that assume a Unix environment. The tool supplies those missing capabilities. Versions `0.0.208`–`0.0.348` and similar newer architectures already provide native Windows SSH, so the tool patches only their tunnel policy and installs a compatibility runtime for older glibc-based Linux x86_64 hosts.
 
 The Windows askpass helper is a small native launcher built from source in this repository. It does not pass prompts through `cmd.exe`, so quotes, percent signs, exclamation marks, and similar characters are not interpreted a second time by a shell.
 
@@ -55,6 +55,8 @@ If Mirasim has updated to `0.0.208`, or if you already used `v0.1.2`, use `v0.1.
 
 Official auto-updates (for example to `0.0.214`) overwrite the patch again: fully exit Mirasim and run `repair` once to reapply. Version `v0.1.4` was verified against Desktop `0.0.214` with downloaded UI runtime `0.0.216`.
 
+Version `v0.2.0` supports Desktop `0.0.348` (remote payload `0.0.372`, whose bundled Node.js moved to v24 and needs glibc 2.28) and makes the old-glibc support **self-healing on the remote**. On the first connection to an old system the tool stores a glibc-2.17 build of Node.js v24 and an N-API `node-pty` in `~/.mirasim-remote/compat/` on the remote and appends a marked hook to the remote `~/.ssh/rc`. From then on sshd runs `compat/fix.sh` at the start of every SSH session: it swaps the compatibility Node.js in only when Mirasim has just delivered a new payload whose `node` cannot start on that machine, and otherwise returns within milliseconds. A later Mirasim Desktop auto-update that wipes the local patch therefore no longer breaks old remotes; `repair` on the Windows side is only needed again for the tunnel policy. To undo the remote changes, delete the marked block from `~/.ssh/rc` and remove `~/.mirasim-remote/compat`.
+
 For a non-default installation directory:
 
 ```bat
@@ -87,6 +89,8 @@ node src/cli.cjs status
 ## Will a Mirasim update overwrite the patch?
 
 **Yes.** The Windows installer normally replaces the application directory, and Mirasim can download a new UI runtime separately. An update may therefore replace `resources/app.asar`, the active runtime frontend, or compatibility assets installed by this tool. The patcher and its external backups normally remain available.
+
+The remote side is unaffected: since `v0.2.0` the compatibility runtime and the `~/.ssh/rc` hook on an old-glibc host live in the remote user's home directory and survive local Mirasim updates; a newly delivered remote payload is switched to the compatibility Node.js before it starts. The only thing a local `repair` still restores is the tunnel policy (staying connected when an unrelated `RemoteForward` from `.ssh/config` fails).
 
 After an update:
 

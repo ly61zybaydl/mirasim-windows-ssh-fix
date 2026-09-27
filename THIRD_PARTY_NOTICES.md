@@ -31,16 +31,16 @@ The complete Windows Release ZIP includes the unmodified `node.exe` from Node.js
 
 The following large files are intentionally excluded from Git history and are included only in a complete Release ZIP. Filenames and upstream sources are recorded in `assets/linux-compat/manifest.json`.
 
-### Node.js v22.23.1 linux-x64-glibc-217
+### Node.js v24.19.0 linux-x64-glibc-217
 
-- Distribution source: <https://unofficial-builds.nodejs.org/download/release/v22.23.1/node-v22.23.1-linux-x64-glibc-217.tar.xz>
+- Distribution source: <https://unofficial-builds.nodejs.org/download/release/v24.19.0/node-v24.19.0-linux-x64-glibc-217.tar.xz>
 - Project: <https://github.com/nodejs/unofficial-builds>
 - The unmodified archive contains the Node.js license and its own third-party notices. Those embedded files must remain in redistributed copies.
 
 ### node-pty 1.2.0-beta.14
 
 - Source: <https://github.com/microsoft/node-pty>
-- Binary in a complete release: `pty-node-v127-glibc217.node`
+- Binary in a complete release: `pty-node-napi-glibc217.node` (N-API build; loads in Node.js 18 and newer)
 - License: MIT
 - Copyright (c) 2012-2015, Christopher Jeffrey
 - Copyright (c) 2016, Daniel Imms

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Support Mirasim Desktop 0.0.348 with remote payload 0.0.372: the launch hook now recognizes the standalone connect flow (`ctx.setStatus({step:'launching'})`) as well as the earlier class-based flow.
+- Ship the glibc 2.17 build of Node.js v24.19.0, matching the Node.js major that Mirasim remote payloads have bundled since 0.0.211; the `node-pty` binary is an N-API build and loads unchanged in Node.js 22 and 24.
+- Make old-glibc support self-healing on the remote: the compatibility runtime is stored in `~/.mirasim-remote/compat/` and a marked `~/.ssh/rc` hook swaps it into every newly delivered payload before Mirasim launches it, so a later Desktop update that wipes the local patch no longer breaks old remotes.
+- Skip re-uploading the 35 MB runtime archive when the remote compat store already holds it.
+- Migrate an installed 0.1.x helper to the new one during `repair` without touching the original backup.
+- Derive the shipped Linux compatibility assets from `assets/linux-compat/manifest.json` in the installer, the release workflow and the tests.
+
 ## 0.1.4
 
 - Verify Mirasim Desktop 0.0.214 together with downloaded UI runtime 0.0.216; capability detection applies without code changes, and 0.0.214 is now listed as tested.

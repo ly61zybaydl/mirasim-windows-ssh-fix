@@ -12,7 +12,13 @@ const manifest = JSON.parse(fs.readFileSync(path.join(assetDirectory, "manifest.
 test("legacy runtime manifest lists the release assets", () => {
   assert.equal(manifest.schemaVersion, 1);
   assert.match(manifest.runtime, /^node-v\d+\.\d+\.\d+-linux-x64-glibc-\d+$/);
-  assert.equal(Number.isInteger(manifest.nodeAbi), true);
+  assert.equal(manifest.runtime.startsWith(`node-${manifest.nodeVersion}-`), true);
+  assert.equal(manifest.nodePty.binding, "napi");
+  assert.match(manifest.nodePty.version, /^\d+\.\d+\.\d+/);
+  assert.equal(`${manifest.runtime}.tar.xz` in manifest.files, true);
+  for (const name of ["pty-node-napi-glibc217.node", "install-legacy-runtime.sh", "legacy-runtime-fix.sh"]) {
+    assert.equal(name in manifest.files, true, `${name} must be a release asset`);
+  }
   for (const [name, entry] of Object.entries(manifest.files)) {
     assert.equal(path.basename(name), name, `manifest path must be a plain filename: ${name}`);
     assert.equal(entry.releaseAsset, true, `${name} must be included in release ZIPs`);
